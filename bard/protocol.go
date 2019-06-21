@@ -47,16 +47,16 @@ func ParseReq(requset []byte) *PCQInfo {
 	case uint8(0x01):
 		// ipv4
 		dst.Addr = append([]byte{}, requset[4: 8]...)				//取四五六七
-		dst.Port = int(requset[8: 9][0]<<8 + requset[9: 10][0])
+		dst.Port = int(requset[8: 9][0]) * 256 + int(requset[9: 10][0])
 	case 0x03:
 		// domain
 		l := requset[4]
 		dst.Addr = append([]byte{}, requset[5: 5+l]...)
-		dst.Port = int(requset[5+l: 6+l][0]<<8 + requset[6+l: 7+l][0])
+		dst.Port = int(requset[5+l: 6+l][0]) * 256 + int(requset[6+l: 7+l][0])
 	case 0x04:
 		// ipv6
 		dst.Addr = append([]byte{}, requset[4: 20]...)
-		dst.Port = int(requset[20: 21][0]<<8 + requset[21: 22][0])
+		dst.Port = int(requset[20: 21][0]) * 256 + int(requset[21: 22][0])
 	}
 
 	pcqi.Dst = dst
