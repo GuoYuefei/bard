@@ -44,8 +44,10 @@ func main() {
 				} else {
 					fmt.Println("发送", []byte{bard.SocksVersion, 0x00})
 					fmt.Println("发送了", n,"个数据")
-
 					//ctx, _ := readFully(conn)
+
+					// 一次socks5请求， 就要建立一次tcp连接，但是这个tcp通讯多少次就不得而知了
+
 					tmp = <-ctx
 					pcri := bard.ParseReq(tmp)
 					fmt.Println("bytes: \t", tmp, "\n对应的字符串: \t", string(tmp))
@@ -56,10 +58,12 @@ func main() {
 
 
 					conn2, err := net.Dial("tcp", string(pcri.Dst.Addr)+":"+strconv.Itoa(pcri.Dst.Port))
-					defer conn2.Close()
 					if err != nil {
 						// todo
+						return
 					}
+					defer conn2.Close()
+
 
 					for i := 0; i < 3; i++ {
 
@@ -69,7 +73,8 @@ func main() {
 						var body [102400]byte
 						n, err = conn2.Write(tmp)
 						// todo 等待服务器发送消息 当然这个得设置成并发啦，最好能用chanel做
-						time.Sleep(1 * time.Second)
+						time.Sleep(600 * time.Millisecond)
+
 
 						n, err = conn2.Read(body[0:])
 						fmt.Println("内容：", string(body[0:n]))
@@ -92,7 +97,7 @@ func readfully(conn io.ReadCloser)  (<-chan []byte, error) {
 	rst := make(chan []byte, 1024)
 	var err error
 	//result := bytes.NewBuffer(nil)
-	var buf [1024]byte					// 这个数字让人纠结
+	var buf [10240]byte					// 这个数字让人纠结
 	go func() {
 		for {
 			var n int
