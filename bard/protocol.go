@@ -1,6 +1,17 @@
 // socks5 协议的一些方法集合
 package bard
 
+import (
+	"bufio"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"sync"
+)
+
 const (
 	SocksVersion = 5
 
@@ -62,6 +73,120 @@ func ParseReq(requset []byte) *PCQInfo {
 	pcqi.Dst = dst
 	return pcqi
 }
+
+func HandShake(r *bufio.Reader, conn net.Conn) error {
+	version, _ := r.ReadByte()
+	log.Printf("socks's version is %d", version)
+
+	if version != 5 {
+		return errors.New("该协议不是socks5协议")
+	}
+
+	nmethods, _ := r.ReadByte()
+	log.Printf("Methods' lenght is %d", nmethods)
+
+	buf := make([]byte, nmethods)
+
+	io.ReadFull(r, buf)
+	log.Printf("验证方式为： %v", buf)
+
+	resp := []byte{5, 0}
+	conn.Write(resp)
+	return nil
+}
+
+func ReadAddr(r *bufio.Reader) (string, error) {
+	version, _ := r.ReadByte()
+	log.Printf("socks's version is %d", version)
+	if version != 5 {
+		return "", errors.New("该协议不是socks5协议")
+	}
+
+	cmd, _ := r.ReadByte()
+
+	if cmd != 1 {
+		return "", errors.New("客户端请求类型不为1， 暂且只支持代理连接")
+	}
+
+	r.ReadByte()		//保留字段
+
+	addrtype, _ := r.ReadByte()
+	log.Printf("客户端请求为远程服务器地址类型为: %d", addrtype)
+
+
+	if addrtype != 3 {
+		return "", errors.New("请求的远程服务器地址类型部位3， 暂时不支持其他地址类型")
+	}
+
+	addrlen, _ := r.ReadByte()
+	addr := make([]byte, addrlen)
+	io.ReadFull(r, addr)
+
+	log.Printf("域名为: %s", addr)
+
+	var port int16
+
+	binary.Read(r, binary.BigEndian, &port)
+
+	return fmt.Sprintf("%s:%d", addr, port), nil
+
+}
+
+func HandleConn(conn net.Conn) {
+	defer conn.Close()
+	r := bufio.NewReader(conn)
+	HandShake(r, conn)
+	addr, err := ReadAddr(r)
+	if err != nil {
+		log.Println(err)
+	}
+	log.Printf("得到的完整的地址是：%s", addr)
+	resp := []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+
+	conn.Write(resp)
+
+	var (
+		remote net.Conn
+	)
+
+	remote, err = net.Dial("tcp", addr)
+	if err != nil {
+		log.Println(err)
+		conn.Close()
+		return
+	}
+	defer remote.Close()
+
+	wg := new(sync.WaitGroup)
+	wg.Add(2)
+	fmt.Println("xxxxx")
+	go func() {
+		defer wg.Done()
+		written, e := io.Copy(remote, r)
+		if e != nil {
+			log.Printf("从r中写入到remote失败: %v", e)
+		} else {
+			log.Printf("复制了%d信息", written)
+		}
+
+	}()
+
+	go func() {
+		defer wg.Done()
+		written, e := io.Copy(conn, remote)
+		if e != nil {
+			log.Printf("从remote中写入到r失败: %v", e)
+		} else {
+			log.Printf("复制了%d信息", written)
+		}
+
+	}()
+
+	wg.Wait()
+	//remote.Close()
+	//conn.Close()
+}
+
 
 
 
