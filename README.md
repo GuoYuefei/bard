@@ -1,8 +1,8 @@
 - [Getting Started](#getting-started)
-  + [Instll](#Install)
-  + [Usage](#usage)
+  + [Install](#Install)
+  + [Usage](#Usage)
 
-- [Lisence](#License)
+- [License](#License)
 - [Preface](#Preface)
 
 ## Getting Started
@@ -13,11 +13,11 @@
 
 
 
-### Useage Example
+### Usage
 
 
 
-## Lisence
+## License
 
 I haven't decided yet
 
