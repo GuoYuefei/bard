@@ -3,7 +3,6 @@ package bard
 
 import (
 	"bufio"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +19,28 @@ const (
 type Address struct {
 	Atyp byte			// Atyp address type 0x01, 0x02, 0x04
 	Addr []byte
-	Port int16			// 16 bit
+	Port []byte			// 16 bit
+}
+
+func (a *Address) PortToInt() int {
+	p := a.Port
+	return 256*int(p[0])+int(p[1])
+}
+
+// 因为域名这里没有记录下长度，如果用于协议的话，前面需要加域名的长度， 如果是ip则不用加工
+func (a *Address) ToProtocolAddr() []byte {
+	if a.Atyp&0x02==0x22 {
+		// ip就返回原本的bytes
+		return a.Addr
+	}
+
+	var domainLen byte = byte(len(a.Addr))
+	return append([]byte{domainLen}, a.Addr...)
+}
+
+// 这是常规协议回应可能用的bytes结构
+func (a *Address) ToProtocol() []byte {
+	return append(append([]byte{a.Atyp},  a.ToProtocolAddr()...), a.Port...)
 }
 
 func (a *Address) AddrString() string {
@@ -38,7 +58,7 @@ func (a *Address) AddrString() string {
 
 func (a *Address) String() string {
 
-	return fmt.Sprintf("%s:%d", a.AddrString(), a.Port)
+	return fmt.Sprintf("%s:%d", a.AddrString(), a.PortToInt())
 }
 
 
@@ -58,40 +78,90 @@ func (a *Address) String() string {
 type PCQInfo struct {
 	Ver byte  		// version
 	Cmd byte		// command
+	Frag byte		// 仅用于Cmd=0x03时的udp传输
 	Rsv byte		// reserve
-	Dst Address
+	Dst *Address
 }
 
-// 解析请求信息 这个函数在程序中会往复使用，在其后的试探中应该加强其效率
-// 这个方法废弃 错误， 并且在之前的server中使用，现在的server未用
-func ParseReq(requset []byte) *PCQInfo {
-	var pcqi = &PCQInfo{}
-	pcqi.Ver = requset[0]
-	pcqi.Cmd = requset[1]
-	pcqi.Rsv = requset[2]
-	dst := Address{}
-	dst.Atyp = requset[3]
+func (p *PCQInfo) String() string {
+	return p.Dst.String()
+}
 
-	// 地址可能存在几种可能变长的域名，定常的ipv4和ipv6 ip那边有问题。。。。
-	switch dst.Atyp {
-	case uint8(0x01):
-		// ipv4
-		dst.Addr = append([]byte{}, requset[4: 8]...)				//取四五六七
-		dst.Port = int16(requset[8: 9][0]) * 256 + int16(requset[9: 10][0])
-	case 0x03:
-		// domain
-		l := requset[4]
-		dst.Addr = append([]byte{}, requset[5: 5+l]...)
-		dst.Port = int16(requset[5+l: 6+l][0]) * 256 + int16(requset[6+l: 7+l][0])
-	case 0x04:
-		// ipv6
-		dst.Addr = append([]byte{}, requset[4: 20]...)
-		dst.Port = int16(requset[20: 21][0]) * 256 + int16(requset[21: 22][0])
+// 参照io.copyBuffer
+// ornament 用于将来插件注册使用
+func (p *PCQInfo) Copy(dst io.Writer, src io.Reader, buf []byte, ornament func([]byte)) (written int64, err error) {
+	// If the reader has a WriteTo method, use it to do the copy.
+	// Avoids an allocation and a copy.
+	if wt, ok := src.(io.WriterTo); ok {
+		return wt.WriteTo(dst)
+	}
+	// Similarly, if the writer has a ReadFrom method, use it to do the copy.
+	if rt, ok := dst.(io.ReaderFrom); ok {
+		return rt.ReadFrom(src)
 	}
 
-	pcqi.Dst = dst
-	return pcqi
+	var udpHandle = func(bytes []byte) {
+		if !(p.Cmd == 0x03) {
+			return 				// 非udp连接无需处理
+		}
+		// 请求udp连接
+		temp := append([]byte{0x00, 0x00, p.Frag},
+			p.Dst.ToProtocol()...)
+		bytes = append(temp, bytes...)
+	}
+
+	if ornament == nil {
+		// 点缀函数如果不存在的话
+		ornament = udpHandle
+	} else {
+		ornament = func(bytes []byte) {
+			ornament(bytes)
+
+			// udp处理是socks5协议的一部分，属于会话层协议，应该放在加密(表示层)或者其他高于会话层协议的数据处理的后面
+			udpHandle(bytes)
+		}
+	}
+
+	if buf == nil {
+		size := 32 * 1024
+		if l, ok := src.(*io.LimitedReader); ok && int64(size) > l.N {
+			if l.N < 1 {
+				size = 1
+			} else {
+				size = int(l.N)
+			}
+		}
+		buf = make([]byte, size)
+	}
+	for {
+		nr, er := src.Read(buf)
+		// 数据处理
+		ornament(buf)
+		if nr > 0 {
+			nw, ew := dst.Write(buf[0:nr])
+			if nw > 0 {
+				written += int64(nw)
+			}
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+	return written, err
 }
+
+
 
 func HandShake(r *bufio.Reader, conn net.Conn) error {
 	version, _ := r.ReadByte()
@@ -140,15 +210,15 @@ func ReadRemoteHost(r *bufio.Reader) (*Address, error) {
 	}
 
 
-	var port int16
-	binary.Read(r, binary.BigEndian, &port)
-	address.Port = port
+	var port [2]byte
+	io.ReadFull(r, port[0:])
+	address.Port = port[0:]
 
 	return address, nil
 
 }
 
-func ReadAddr(r *bufio.Reader) (*Address, error) {
+func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 	version, _ := r.ReadByte()
 	log.Printf("socks's version is %d", version)
 	if version != SocksVersion {
@@ -157,19 +227,24 @@ func ReadAddr(r *bufio.Reader) (*Address, error) {
 
 	cmd, _ := r.ReadByte()
 
-	if cmd != 1 {
-		return nil, errors.New("客户端请求类型不为1， 暂且只支持代理连接")
+	fmt.Println(cmd)
+	if cmd&0x01 != 0x01 {
+		// todo 现在仅支持0x03 and 0x01 即非bind请求
+		return nil, errors.New("客户端请求类型不为1或者3， 暂且只支持代理连接和udp")
 	}
 
-	r.ReadByte()		//保留字段
+	rsv, _ := r.ReadByte()		//保留字段
 
 	// address应该能传出去的
 	address, _ := ReadRemoteHost(r)
-	log.Println("连接具体地址为：",address)
+	//log.Println("连接具体地址为：",address)
 
-	return address, nil
+	return &PCQInfo{version, cmd,0x00,rsv, address}, nil
 
 }
+
+
+
 
 func HandleConn(conn net.Conn) {
 	defer conn.Close()
@@ -181,7 +256,7 @@ func HandleConn(conn net.Conn) {
 		return
 	}
 
-	addr, err := ReadAddr(r)
+	pcq, err := ReadPCQInfo(r)
 	if err != nil {
 		log.Println(err)
 		// 拒绝请求处理
@@ -189,7 +264,7 @@ func HandleConn(conn net.Conn) {
 		conn.Write(resp)
 		return
 	}
-	log.Printf("得到的完整的地址是：%s", addr)
+	log.Printf("得到的完整的地址是：%s", pcq)
 	resp := []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
 	conn.Write(resp)
@@ -198,7 +273,8 @@ func HandleConn(conn net.Conn) {
 		remote net.Conn
 	)
 
-	remote, err = net.Dial("tcp", addr.String())
+	// todo 这个要改
+	remote, err = net.Dial("tcp", pcq.String())
 	if err != nil {
 		log.Println(err)
 		conn.Close()
