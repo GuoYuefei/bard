@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"sync"
 )
 
 const (
@@ -16,50 +15,7 @@ const (
 
 )
 
-type Address struct {
-	Atyp byte			// Atyp address type 0x01, 0x02, 0x04
-	Addr []byte
-	Port []byte			// 16 bit
-}
 
-func (a *Address) PortToInt() int {
-	p := a.Port
-	return 256*int(p[0])+int(p[1])
-}
-
-// 因为域名这里没有记录下长度，如果用于协议的话，前面需要加域名的长度， 如果是ip则不用加工
-func (a *Address) ToProtocolAddr() []byte {
-	if a.Atyp&0x02==0x22 {
-		// ip就返回原本的bytes
-		return a.Addr
-	}
-
-	var domainLen byte = byte(len(a.Addr))
-	return append([]byte{domainLen}, a.Addr...)
-}
-
-// 这是常规协议回应可能用的bytes结构
-func (a *Address) ToProtocol() []byte {
-	return append(append([]byte{a.Atyp},  a.ToProtocolAddr()...), a.Port...)
-}
-
-func (a *Address) AddrString() string {
-	var hostname string
-	if !(a.Atyp&0x02==0x02) {
-		// 就说明是非域名
-		var ip net.IP = a.Addr
-		hostname = ip.String()
-	} else {
-		hostname = string(a.Addr)
-	}
-
-	return hostname
-}
-
-func (a *Address) String() string {
-
-	return fmt.Sprintf("%s:%d", a.AddrString(), a.PortToInt())
-}
 
 
 /**
@@ -73,95 +29,6 @@ func (a *Address) String() string {
 +----------+------------+---------+-----------+-----------------------+------------+
 
  */
-
-// Proxy connection request information
-type PCQInfo struct {
-	Ver byte  		// version
-	Cmd byte		// command
-	Frag byte		// 仅用于Cmd=0x03时的udp传输
-	Rsv byte		// reserve
-	Dst *Address
-}
-
-func (p *PCQInfo) String() string {
-	return p.Dst.String()
-}
-
-// 参照io.copyBuffer
-// ornament 用于将来插件注册使用
-func (p *PCQInfo) Copy(dst io.Writer, src io.Reader, buf []byte, ornament func([]byte)) (written int64, err error) {
-	// If the reader has a WriteTo method, use it to do the copy.
-	// Avoids an allocation and a copy.
-	if wt, ok := src.(io.WriterTo); ok {
-		return wt.WriteTo(dst)
-	}
-	// Similarly, if the writer has a ReadFrom method, use it to do the copy.
-	if rt, ok := dst.(io.ReaderFrom); ok {
-		return rt.ReadFrom(src)
-	}
-
-	var udpHandle = func(bytes []byte) {
-		if !(p.Cmd == 0x03) {
-			return 				// 非udp连接无需处理
-		}
-		// 请求udp连接
-		temp := append([]byte{0x00, 0x00, p.Frag},
-			p.Dst.ToProtocol()...)
-		bytes = append(temp, bytes...)
-	}
-
-	if ornament == nil {
-		// 点缀函数如果不存在的话
-		ornament = udpHandle
-	} else {
-		ornament = func(bytes []byte) {
-			ornament(bytes)
-
-			// udp处理是socks5协议的一部分，属于会话层协议，应该放在加密(表示层)或者其他高于会话层协议的数据处理的后面
-			udpHandle(bytes)
-		}
-	}
-
-	if buf == nil {
-		size := 32 * 1024
-		if l, ok := src.(*io.LimitedReader); ok && int64(size) > l.N {
-			if l.N < 1 {
-				size = 1
-			} else {
-				size = int(l.N)
-			}
-		}
-		buf = make([]byte, size)
-	}
-	for {
-		nr, er := src.Read(buf)
-		// 数据处理
-		ornament(buf)
-		if nr > 0 {
-			nw, ew := dst.Write(buf[0:nr])
-			if nw > 0 {
-				written += int64(nw)
-			}
-			if ew != nil {
-				err = ew
-				break
-			}
-			if nr != nw {
-				err = io.ErrShortWrite
-				break
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-	return written, err
-}
-
-
 
 func HandShake(r *bufio.Reader, conn net.Conn) error {
 	version, _ := r.ReadByte()
@@ -246,6 +113,8 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 
 
 
+
+
 func HandleConn(conn net.Conn) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
@@ -265,49 +134,12 @@ func HandleConn(conn net.Conn) {
 		return
 	}
 	log.Printf("得到的完整的地址是：%s", pcq)
-	resp := []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-
-	conn.Write(resp)
-
-	var (
-		remote net.Conn
-	)
-
-	// todo 这个要改
-	remote, err = net.Dial("tcp", pcq.String())
+	err = pcq.HandleConn(conn, r)
 	if err != nil {
 		log.Println(err)
-		conn.Close()
 		return
 	}
-	defer remote.Close()
 
-	wg := new(sync.WaitGroup)
-	wg.Add(2)
-	//fmt.Println("xxxxx")
-	go func() {
-		defer wg.Done()
-		written, e := io.Copy(remote, r)
-		if e != nil {
-			log.Printf("从r中写入到remote失败: %v", e)
-		} else {
-			log.Printf("r -> remote 复制了%dB信息", written)
-		}
-		remote.Close()
-	}()
-
-	go func() {
-		defer wg.Done()
-		written, e := io.Copy(conn, remote)
-		if e != nil {
-			log.Printf("从remote中写入到r失败: %v", e)
-		} else {
-			log.Printf("remote->r 复制了%dB信息", written)
-		}
-		conn.Close()
-	}()
-
-	wg.Wait()
 	//remote.Close()
 	//conn.Close()
 }
