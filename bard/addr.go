@@ -18,7 +18,7 @@ func (a *Address) PortToInt() int {
 
 // 因为域名这里没有记录下长度，如果用于协议的话，前面需要加域名的长度， 如果是ip则不用加工
 func (a *Address) ToProtocolAddr() []byte {
-	if a.Atyp&0x02==0x22 {
+	if a.Atyp&0x02!=0x02 {
 		// ip就返回原本的bytes
 		return a.Addr
 	}

@@ -10,6 +10,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // 主要用于socks5请求问题
@@ -44,85 +45,6 @@ func (p *PCQInfo) String() string {
 	return p.Dst.String()
 }
 
-func (p *PCQInfo) Copy(dst io.Writer, src io.Reader, ornament func([]byte)) (written int64, err error) {
-	return p.CopyBuffer(dst, src, nil, ornament)
-}
-
-// 参照io.copyBuffer
-// ornament 用于将来插件注册使用
-func (p *PCQInfo) CopyBuffer(dst io.Writer, src io.Reader, buf []byte, ornament func([]byte)) (written int64, err error) {
-	// If the reader has a WriteTo method, use it to do the copy.
-	// Avoids an allocation and a copy.
-	if wt, ok := src.(io.WriterTo); ok {
-		return wt.WriteTo(dst)
-	}
-	// Similarly, if the writer has a ReadFrom method, use it to do the copy.
-	if rt, ok := dst.(io.ReaderFrom); ok {
-		return rt.ReadFrom(src)
-	}
-
-	var udpHandle = func(bytes []byte) {
-		if !(p.Cmd != 0x03) {
-			return 				// 非udp连接无需处理
-		}
-		// 请求udp连接
-		temp := append([]byte{0x00, 0x00, p.Frag},
-			p.Dst.ToProtocol()...)
-		bytes = append(temp, bytes...)
-		p.Frag++
-	}
-
-	if ornament == nil {
-		// 点缀函数如果不存在的话
-		ornament = udpHandle
-	} else {
-		ornament = func(bytes []byte) {
-			ornament(bytes)
-
-			// udp处理是socks5协议的一部分，属于会话层协议，应该放在加密(表示层)或者其他高于会话层协议的数据处理的后面
-			udpHandle(bytes)
-		}
-	}
-
-	if buf == nil {
-		size := 32 * 1024
-		if l, ok := src.(*io.LimitedReader); ok && int64(size) > l.N {
-			if l.N < 1 {
-				size = 1
-			} else {
-				size = int(l.N)
-			}
-		}
-		buf = make([]byte, size)
-	}
-	for {
-		nr, er := src.Read(buf)
-		// 数据处理
-		ornament(buf)
-		if nr > 0 {
-			nw, ew := dst.Write(buf[0:nr])
-			if nw > 0 {
-				written += int64(nw)
-			}
-			if ew != nil {
-				err = ew
-				break
-			}
-			if nr != nw {
-				err = io.ErrShortWrite
-				break
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-	return written, err
-}
-
 
 func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 	if p.Cmd == 0x01 {
@@ -148,7 +70,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 		//fmt.Println("xxxxx")
 		go func() {
 			defer wg.Done()
-			written, e := p.Copy(remote, r, nil)
+			written, e := Pipe(remote, r, nil)
 			if e != nil {
 				log.Printf("从r中写入到remote失败: %v", e)
 			} else {
@@ -159,7 +81,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 
 		go func() {
 			defer wg.Done()
-			written, e := p.Copy(conn, remote, nil)
+			written, e := Pipe(conn, remote, nil)
 			if e != nil {
 				log.Printf("从remote中写入到r失败: %v", e)
 			} else {
@@ -174,51 +96,74 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 	} else if p.Cmd == 0x03 {
 		fmt.Println("打个标记")
 
-		udpPacket, e := net.ListenPacket("udp", "47.100.167.83:"+ strconv.Itoa(p.Dst.PortToInt()))
+		udpaddr, e := net.ResolveUDPAddr("udp4", ":"+strconv.Itoa(p.Dst.PortToInt()+1))
+
+		if e != nil {
+			log.Println(e)
+			return e
+		}
+
+		udpPacket, e := net.ListenUDP("udp4", udpaddr)
+		//fmt.Println("p.dst.port", p.Dst.PortToInt())
+		//fmt.Println(udpPacket.LocalAddr())
 
 		if e != nil {
 			log.Printf("udp代理服务器端开启监听失败: %v", e)
 			return e
 		}
 
-		resp := append([]byte{0x05, 0x00, 0x00, 0x01, 47, 100, 167, 83}, p.Dst.Port...)
+		resp := append([]byte{0x05, 0x00, 0x00, 0x01, 192, 168, 1, 16}, p.Dst.Port[0], p.Dst.Port[1]+1)
 		conn.Write(resp)
 
+		for {
+			udpReqS, e := NewUDPReqS(udpPacket)
+			if e != nil {
+				log.Println(e)
+				return e
+			}
 
-		udpReqS, e := NewUDPReqS(udpPacket)
-		if e != nil {
-			log.Println(e)
-			return e
+
+			//// todo 此时其实还是不知道信息到底是远程服务器发来的还是客户端发来的， 这边默认是客户端导致了服务器端主动发来的数据无法穿透代理
+			// 根据请求信息向客户端真的想要请求的服务器请求
+			res, e := udpReqS.ReqRemote()
+			fmt.Println("打个标记1")
+			if e != nil {
+				log.Println(e)
+				return e
+			}
+
+			temp := new(bytes.Buffer)
+			// 这个是代理服务器返回客户端
+			written, e := Pipe(temp, res, func(data []byte) ([]byte,int) {
+				head := append([]byte{0x00, 0x00, 0x00}, udpReqS.Dst.ToProtocol()...)
+				data = append(head, data...)
+				return data, len(data)
+			})
+			if e != nil && e != io.ErrShortWrite {
+				log.Println(e)
+				return e
+			}
+
+			clientAddr, e := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", "127.0.0.1", p.Dst.PortToInt()))
+			fmt.Println("客户端的udp监听地址：", clientAddr)
+			n, e := udpPacket.WriteTo(temp.Bytes()[0: written], clientAddr)
+
+
+			if e != nil {
+				log.Println(e)
+				return e
+			}
+
+			//if written != int64(n) {
+			//	fmt.Printf("读写问题 written = %d, n = %d", written, n)
+			//}
+
+
+
+			log.Printf("---------------通过udp传输了%dB的数据\n这些数据是%v", n, temp.Bytes())
+			time.Sleep(100*time.Millisecond)
+
 		}
-		// 根据请求信息向客户端真的想要请求的服务器请求
-		res, e := udpReqS.Req()
-		fmt.Println("打个标记1")
-		if e != nil {
-			log.Println(e)
-			return e
-		}
-
-		temp := new(bytes.Buffer)
-		// 这个是代理服务器返回客户端
-		written, e := p.Copy(temp, res, nil)
-		if e != nil {
-			log.Println(e)
-			return e
-		}
-
-		n, e := udpPacket.WriteTo(temp.Bytes(), p)
-
-
-		if e != nil {
-			log.Println(e)
-			return e
-		}
-
-		if written != int64(n) {
-			fmt.Println("读写问题")
-		}
-
-		log.Printf("---------------通过udp传输了%dB的数据", written)
 	}
 	return e
 }
