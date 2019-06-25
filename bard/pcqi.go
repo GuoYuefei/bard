@@ -10,7 +10,6 @@ import (
 	"net"
 	"strconv"
 	"sync"
-	"time"
 )
 
 // 主要用于socks5请求问题
@@ -112,8 +111,11 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 			return e
 		}
 
-		resp := append([]byte{0x05, 0x00, 0x00, 0x01, 192, 168, 1, 16}, p.Dst.Port[0], p.Dst.Port[1]+1)
+		//todo 这里的ip应该从配置文件中取得，或者通过函数取得服务器的公网ip
+		resp := append([]byte{0x05, 0x00, 0x00, 0x01, 127, 0, 1, 1}, p.Dst.Port[0], p.Dst.Port[1]+1)
 		conn.Write(resp)
+
+		//packet := NewPacket(udpPacket, p.Dst.PortToInt())
 
 		for {
 			udpReqS, e := NewUDPReqS(udpPacket)
@@ -144,6 +146,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 				return e
 			}
 
+			//todo 应该通过某种途径找到客户端的ip
 			clientAddr, e := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", "127.0.0.1", p.Dst.PortToInt()))
 			fmt.Println("客户端的udp监听地址：", clientAddr)
 			n, e := udpPacket.WriteTo(temp.Bytes()[0: written], clientAddr)
@@ -158,10 +161,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 			//	fmt.Printf("读写问题 written = %d, n = %d", written, n)
 			//}
 
-
-
 			log.Printf("---------------通过udp传输了%dB的数据\n这些数据是%v", n, temp.Bytes())
-			time.Sleep(100*time.Millisecond)
 
 		}
 	}

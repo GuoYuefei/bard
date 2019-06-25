@@ -5,6 +5,14 @@ import (
 	"net"
 )
 
+type UDPAddress struct {
+	*Address
+}
+
+func (u *UDPAddress) Network() string {
+	return "udp"
+}
+
 type Address struct {
 	Atyp byte			// Atyp address type 0x01, 0x02, 0x04
 	Addr []byte
