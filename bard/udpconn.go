@@ -27,8 +27,11 @@ func (u *UdpMessage) Read(b []byte) (n int, err error) {
 func (u *UdpMessage) Write(b []byte) (n int, err error) {
 	write := new(bytes.Buffer)
 	// todo 可能有错
+	i, err := write.Write(b)
 	u.Data = write.Bytes()
-	return write.Write(b)
+
+
+	return i, err
 }
 
 func (u *UdpMessage) GetDst() *net.UDPAddr {
@@ -45,15 +48,17 @@ type Packet struct {
 }
 
 // todo CADDR 应该有socks给出
-func NewPacket(p net.PacketConn, caddr net.Addr,cport int) (*Packet, error) {
+func NewPacket(conn net.Conn, p net.PacketConn,cport int) (*Packet, error) {
 	var err error
+	caddr := conn.RemoteAddr()
 	packet := &Packet{}
-	packet.Servers = make(map[string] *net.UDPAddr)
-
-	packet.message = make(chan *UdpMessage, 1)			//暂且一个
+	packet.Socks = conn
 	packet.Packet = p
+	packet.Servers = make(map[string] *net.UDPAddr)
+	packet.message = make(chan *UdpMessage, 1)			//暂且一个
+
 	if addr, ok := caddr.(*net.TCPAddr); ok {
-		packet.Client, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr.IP, cport))
+		packet.Client, err = net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%d", addr.IP, cport))
 	} else {
 		err = fmt.Errorf("net.Addr must be tcpaddr ")
 	}
@@ -61,8 +66,16 @@ func NewPacket(p net.PacketConn, caddr net.Addr,cport int) (*Packet, error) {
 	return packet, err
 }
 
-func Request() (n int, err error) {
-	return 1, fmt.Errorf("")
+// 将chan message的消息按指定位子请求出去
+func (p *Packet) Request() (n int, err error) {
+	message := <- p.message
+	i, err := p.Packet.WriteTo(message.Data, message.dst)
+
+	if err != nil {
+		log.Println(err)
+	}
+
+	return i, err
 }
 
 func (p *Packet) Listen() {
@@ -93,9 +106,10 @@ func (p *Packet) Listen() {
 			return
 		} else {
 			// 原本列表中不存在
-			dst, err := net.ResolveUDPAddr("udp", udpreqs.String())
+			dst, err := net.ResolveUDPAddr(udpreqs.Network(), udpreqs.String())
+			//fmt.Println(dst)
 			if err != nil {
-				log.Println(err)
+				log.Println("这里是Listen（） ",err)
 				return
 			}
 			p.Servers[udpreqs.String()] = dst
@@ -106,11 +120,13 @@ func (p *Packet) Listen() {
 		}
 		// 客户端发来的消息 end
 	} else {
+		// 远程主机or其他
 		if src, ok := p.Servers[addr.String()]; ok {
 			message.dst = p.Client
+
 			// 如果发送的消息来自ip和port记录在servers中了，那么就执行转发.否则丢弃
 			_, err := Pipe(message, reader, func(data []byte) ([]byte, int) {
-				head := append([]byte{0x00, 0x00, 0x00, 0x01}, src.IP...)
+				head := append([]byte{0x00, 0x00, 0x00, 0x01}, src.IP.To4()...)
 				head = append(head, uint8(src.Port>>8), uint8(src.Port))
 				data = append(head, data...)
 				return data, len(data)
@@ -125,6 +141,7 @@ func (p *Packet) Listen() {
 			return
 		} else {
 			// 若是无记录主机就丢弃信息
+			fmt.Println("丢弃来自主机", addr.String(), "的信息")
 			return
 		}
 

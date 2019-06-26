@@ -41,7 +41,7 @@ func (u *UDPReqS) String() string {
 
 //Network
 func (u *UDPReqS)Network() string {
-	return "udp"
+	return "udp4"
 }
 
 func NewUDPReqS(packet net.PacketConn) (*UDPReqS, error) {
@@ -59,7 +59,7 @@ func NewUDPReqS(packet net.PacketConn) (*UDPReqS, error) {
 	reader := bufio.NewReader(bytes.NewReader(buf[0:n]))
 
 
-	fmt.Printf("udp的消息来源 %\n", addr)				//来源和我们要发送的地址相同
+	fmt.Printf("udp的消息来源 %s\n", addr)				//来源和我们要发送的地址相同
 
 	return NewUDPReqSFromReader(reader, addr)
 }
@@ -83,7 +83,7 @@ func NewUDPReqSFromReader(reader *bufio.Reader, addr net.Addr) (*UDPReqS, error)
 	u.Data = new(bytes.Buffer)
 	_, err = io.Copy(u.Data, reader)
 	//time.Sleep(10000*time.Millisecond)
-	fmt.Println("len", len(u.Data.Bytes()),"u.Data", u.Data.Bytes())
+	//fmt.Println("len", len(u.Data.Bytes()),"u.Data", u.Data.Bytes())
 	if err != nil {
 		return nil, err
 	}

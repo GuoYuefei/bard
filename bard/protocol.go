@@ -115,7 +115,7 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 
 
 
-func HandleConn(conn net.Conn) {
+func HandleConn(conn net.Conn, config *Config) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
 	err := HandShake(r, conn)
@@ -134,7 +134,7 @@ func HandleConn(conn net.Conn) {
 		return
 	}
 	log.Printf("得到的完整的地址是：%s", pcq)
-	err = pcq.HandleConn(conn, r)
+	err = pcq.HandleConn(conn, r, config)
 	if err != nil {
 		log.Println(err)
 		return
