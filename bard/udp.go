@@ -34,7 +34,7 @@ func (u *UDPReqS) String() string {
 		log.Println("-------------dns解析失败---------------", e)
 		return ""
 	}
-	fmt.Println(ips)
+	//fmt.Println(ips)
 
 	return fmt.Sprintf("%s:%d", ips[0], u.Dst.PortToInt())
 }

@@ -1,6 +1,7 @@
 package bard
 
 import (
+	"fmt"
 	"io"
 )
 
@@ -42,9 +43,9 @@ func PipeBuffer(dst io.Writer, src io.Reader, buf []byte, ornament FunOrnament) 
 		// 数据处理
 		buf, n := ornament(buf[0:nr])
 
-		//if nr != n {
-		//	fmt.Printf("长度： %d\nadd udp proxy head %v\n", n, buf[0:n])
-		//}
+		if nr != n {
+			fmt.Printf("len of data： %d\nadd udp proxy head %v\n", n, buf[0:n])
+		}
 
 		if nr > 0 {
 			nw, ew := dst.Write(buf[0:n])

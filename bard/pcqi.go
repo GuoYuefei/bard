@@ -3,7 +3,6 @@ package bard
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"strconv"
@@ -107,7 +106,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 		return nil
 
 	} else if p.Cmd == 0x03 {
-		fmt.Println("打个标记")
+		//fmt.Println("打个标记")
 
 		udpaddr, e := net.ResolveUDPAddr("udp4", ":"+strconv.Itoa(p.Dst.PortToInt()+1))
 
@@ -152,55 +151,6 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 
 		wg.Wait()
 
-		// 之前试验代码， 废弃
-
-		//for {
-		//	udpReqS, e := NewUDPReqS(udpPacket)
-		//	if e != nil {
-		//		log.Println(e)
-		//		return e
-		//	}
-		//
-		//
-		//	//// todo 此时其实还是不知道信息到底是远程服务器发来的还是客户端发来的， 这边默认是客户端导致了服务器端主动发来的数据无法穿透代理
-		//	// 根据请求信息向客户端真的想要请求的服务器请求
-		//	res, e := udpReqS.ReqRemote()
-		//	fmt.Println("打个标记1")
-		//	if e != nil {
-		//		log.Println(e)
-		//		return e
-		//	}
-		//
-		//	temp := new(bytes.Buffer)
-		//	// 这个是代理服务器返回客户端
-		//	written, e := Pipe(temp, res, func(data []byte) ([]byte,int) {
-		//		head := append([]byte{0x00, 0x00, 0x00}, udpReqS.Dst.ToProtocol()...)
-		//		data = append(head, data...)
-		//		return data, len(data)
-		//	})
-		//	if e != nil && e != io.ErrShortWrite {
-		//		log.Println(e)
-		//		return e
-		//	}
-		//
-		//	//todo 应该通过某种途径找到客户端的ip
-		//	clientAddr, e := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", "127.0.0.1", p.Dst.PortToInt()))
-		//	fmt.Println("客户端的udp监听地址：", clientAddr)
-		//	n, e := udpPacket.WriteTo(temp.Bytes()[0: written], clientAddr)
-		//
-		//
-		//	if e != nil {
-		//		log.Println(e)
-		//		return e
-		//	}
-		//
-		//	//if written != int64(n) {
-		//	//	fmt.Printf("读写问题 written = %d, n = %d", written, n)
-		//	//}
-		//
-		//	log.Printf("---------------通过udp传输了%dB的数据\n这些数据是%v", n, temp.Bytes())
-		//
-		//}
 	}
 	return e
 }
