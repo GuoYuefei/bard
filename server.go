@@ -2,12 +2,22 @@ package main
 
 import (
 	"bard/bard"
+	"fmt"
 	"log"
 	"net"
 )
 
+const (
+	ConfigPath = "./debug/config/config.yml"
+)
+
 func main() {
-	listener, err := net.Listen("tcp", ":1081")
+
+	config, err := bard.ParseConfig(ConfigPath)
+	if err != nil {
+		panic(fmt.Sprintf("path error: %s is error", ConfigPath))
+	}
+	listener, err := net.Listen("tcp", ":"+config.ServerPortString())
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -17,6 +27,6 @@ func main() {
 			log.Fatalln(err)
 		}
 
-		go bard.HandleConn(conn)
+		go bard.HandleConn(conn, config)
 	}
 }

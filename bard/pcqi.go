@@ -2,15 +2,11 @@ package bard
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
-	"fmt"
-	"io"
 	"log"
 	"net"
 	"strconv"
 	"sync"
-	"time"
 )
 
 // 主要用于socks5请求问题
@@ -45,23 +41,39 @@ func (p *PCQInfo) String() string {
 	return p.Dst.String()
 }
 
+func (p *PCQInfo) Response(conn net.Conn, config *Config) error {
 
-func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 	if p.Cmd == 0x01 {
 		resp := []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+		_, err := conn.Write(resp)
+		return err
+	}
 
-		conn.Write(resp)
+	// 主要响应socks5最后的请求
+	// 服务器端server 一般只有一个ip todo 先别管多IP吧
+	var ip = net.ParseIP(config.GetServers()[0])
+	//fmt.Println("ip is .............", ip.To4())
+	// 因为tcp情况下后面的ip端口都是无效信息， 所以不会影响什么。 这边是遵照回应udp的写法
+	resp := append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
+	resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)
+	_, err := conn.Write(resp)
+	return err
+}
+
+
+func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e error) {
+	if p.Cmd == 0x01 {
+		e = p.Response(conn, config)
 
 		var (
 			remote net.Conn
-			err error
 		)
 
-		remote, err = net.Dial("tcp", p.Dst.String())
-		if err != nil {
-			log.Println(err)
+		remote, e = net.Dial("tcp", p.Dst.String())
+		if e != nil {
+			log.Println(e)
 			conn.Close()
-			return err
+			return e
 		}
 		defer remote.Close()
 
@@ -94,16 +106,16 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 		return nil
 
 	} else if p.Cmd == 0x03 {
-		fmt.Println("打个标记")
+		//fmt.Println("打个标记")
 
-		udpaddr, e := net.ResolveUDPAddr("udp4", ":"+strconv.Itoa(p.Dst.PortToInt()+1))
+		udpaddr, e := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(p.Dst.PortToInt()+2))
 
 		if e != nil {
 			log.Println(e)
 			return e
 		}
 
-		udpPacket, e := net.ListenUDP("udp4", udpaddr)
+		udpPacket, e := net.ListenUDP("udp", udpaddr)
 		//fmt.Println("p.dst.port", p.Dst.PortToInt())
 		//fmt.Println(udpPacket.LocalAddr())
 
@@ -112,58 +124,33 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader) (e error) {
 			return e
 		}
 
-		resp := append([]byte{0x05, 0x00, 0x00, 0x01, 192, 168, 1, 16}, p.Dst.Port[0], p.Dst.Port[1]+1)
-		conn.Write(resp)
+		// 对客户端回应
+		e = p.Response(conn, config)
 
-		for {
-			udpReqS, e := NewUDPReqS(udpPacket)
-			if e != nil {
-				log.Println(e)
-				return e
+		packet, e := NewPacket(conn, udpPacket, p.Dst.PortToInt())
+
+		wg := new(sync.WaitGroup)
+		wg. Add(2)
+
+		go func() {
+			defer wg.Done()
+			for {
+				packet.Listen()
 			}
+		}()
 
-
-			//// todo 此时其实还是不知道信息到底是远程服务器发来的还是客户端发来的， 这边默认是客户端导致了服务器端主动发来的数据无法穿透代理
-			// 根据请求信息向客户端真的想要请求的服务器请求
-			res, e := udpReqS.ReqRemote()
-			fmt.Println("打个标记1")
-			if e != nil {
-				log.Println(e)
-				return e
+		go func() {
+			defer wg.Done()
+			for {
+				_, err := packet.Request()
+				if err != nil {
+					continue
+				}
 			}
+		}()
 
-			temp := new(bytes.Buffer)
-			// 这个是代理服务器返回客户端
-			written, e := Pipe(temp, res, func(data []byte) ([]byte,int) {
-				head := append([]byte{0x00, 0x00, 0x00}, udpReqS.Dst.ToProtocol()...)
-				data = append(head, data...)
-				return data, len(data)
-			})
-			if e != nil && e != io.ErrShortWrite {
-				log.Println(e)
-				return e
-			}
+		wg.Wait()
 
-			clientAddr, e := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", "127.0.0.1", p.Dst.PortToInt()))
-			fmt.Println("客户端的udp监听地址：", clientAddr)
-			n, e := udpPacket.WriteTo(temp.Bytes()[0: written], clientAddr)
-
-
-			if e != nil {
-				log.Println(e)
-				return e
-			}
-
-			//if written != int64(n) {
-			//	fmt.Printf("读写问题 written = %d, n = %d", written, n)
-			//}
-
-
-
-			log.Printf("---------------通过udp传输了%dB的数据\n这些数据是%v", n, temp.Bytes())
-			time.Sleep(100*time.Millisecond)
-
-		}
 	}
 	return e
 }

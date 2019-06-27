@@ -4,7 +4,6 @@ package bard
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -31,11 +30,16 @@ const (
  */
 
 func HandShake(r *bufio.Reader, conn net.Conn) error {
-	version, _ := r.ReadByte()
+	version, err := r.ReadByte()
+
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
 	log.Printf("socks's version is %d", version)
 
 	if version != SocksVersion {
-
 		return errors.New("该协议不是socks5协议")
 	}
 
@@ -94,11 +98,12 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 
 	cmd, _ := r.ReadByte()
 
-	fmt.Println(cmd)
+	log.Println("socks' cmd:\t",cmd)
 	if cmd&0x01 != 0x01 {
 		// todo 现在仅支持0x03 and 0x01 即非bind请求
 		return nil, errors.New("客户端请求类型不为1或者3， 暂且只支持代理连接和udp")
 	}
+
 
 	rsv, _ := r.ReadByte()		//保留字段
 
@@ -115,7 +120,7 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 
 
 
-func HandleConn(conn net.Conn) {
+func HandleConn(conn net.Conn, config *Config) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
 	err := HandShake(r, conn)
@@ -134,7 +139,7 @@ func HandleConn(conn net.Conn) {
 		return
 	}
 	log.Printf("得到的完整的地址是：%s", pcq)
-	err = pcq.HandleConn(conn, r)
+	err = pcq.HandleConn(conn, r, config)
 	if err != nil {
 		log.Println(err)
 		return

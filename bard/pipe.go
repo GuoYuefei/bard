@@ -17,16 +17,6 @@ func Pipe(dst io.Writer, src io.Reader, ornament FunOrnament) (written int64, er
 // 参照io.copyBuffer
 // ornament 用于将来插件注册使用
 func PipeBuffer(dst io.Writer, src io.Reader, buf []byte, ornament FunOrnament) (written int64, err error) {
-	// If the reader has a WriteTo method, use it to do the copy.
-	// Avoids an allocation and a copy.
-	//if wt, ok := src.(io.WriterTo); ok {
-	//	return wt.WriteTo(dst)
-	//}
-	//// Similarly, if the writer has a ReadFrom method, use it to do the copy.
-	//if rt, ok := dst.(io.ReaderFrom); ok {
-	//	return rt.ReadFrom(src)
-	//}
-
 
 	if ornament == nil {
 		// 点缀函数如果不存在的话
@@ -54,7 +44,7 @@ func PipeBuffer(dst io.Writer, src io.Reader, buf []byte, ornament FunOrnament) 
 		buf, n := ornament(buf[0:nr])
 
 		if nr != n {
-			fmt.Printf("长度： %d\nadd udp proxy head %v\n", n, buf[0:n])
+			fmt.Printf("len of data： %d\nadd udp proxy head %v\n", n, buf[0:n])
 		}
 
 		if nr > 0 {
