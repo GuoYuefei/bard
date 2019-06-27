@@ -5,6 +5,13 @@ import (
 	"net"
 )
 
+const (
+	IPV4 uint8 = 0X01
+	DOMAIN = 0X03
+	IPV6 = 0X04
+)
+
+
 type UDPAddress struct {
 	*Address
 }

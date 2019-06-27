@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"time"
 )
@@ -31,7 +30,6 @@ func (u *UdpMessage) Write(b []byte) (n int, err error) {
 	i, err := write.Write(b)
 	u.Data = write.Bytes()
 
-
 	return i, err
 }
 
@@ -39,19 +37,19 @@ func (u *UdpMessage) GetDst() *net.UDPAddr {
 	return u.dst
 }
 
-// 用于记录一对udp通道（自个儿取的名）
+// 用于记录一对udp通道
 type Packet struct {
 	Packet net.PacketConn
 	Client *net.UDPAddr
 	Servers map[string] *net.UDPAddr			// 远程主机应该有一个列表 客户端第一次发给远程主机的时候将其记录进Servers列表
 	Socks net.Conn
 	message chan *UdpMessage
-	Frag uint8
+	Frag uint8									// udp分段
 }
 
 func NewPacket(conn net.Conn, p net.PacketConn, cport int) (*Packet, error) {
 	var err error
-	caddr := conn.RemoteAddr()
+	caddr := conn.RemoteAddr()				// socks5远程连接地址就是客户端地址
 	packet := &Packet{}
 	packet.Frag = 0
 	packet.Socks = conn
@@ -74,14 +72,14 @@ func (p *Packet) Request() (n int, err error) {
 	i, err := p.WriteTo(message.Data, message.dst)
 
 	if err != nil {
-		log.Println(err)
+		Deb.Println(err)
 	}
 
 	if i != len(message.Data) {
-		log.Println("io 不完全")
+		Deb.Println("io 不完全")
 	}
 
-		fmt.Printf("len of data:%d Forwarding data： %v\nThe forwarding address is %v\n", i, message.Data, message.dst)
+	Deb.Printf("len of data:%d\tForwarding data： %v\nThe forwarding address is %v\n", i, message.Data, message.dst)
 
 	return i, err
 }
@@ -92,23 +90,21 @@ func (p *Packet) Listen() {
 	var buf = make([]byte, BUFSIZE)
 
 	nr, addr, err := p.ReadFrom(buf)
+	if err != nil {
+		Deb.Println(err)
+		return
+	}
 
 	var uaddr *net.UDPAddr
 
 	uaddr, _ = addr.(*net.UDPAddr)
 
-
-
-	if err != nil {
-		log.Println(err)
-		return
-	}
 	reader := bufio.NewReader(bytes.NewReader(buf[0:nr]))
-	fmt.Println("the message send from the remote:", addr.String())
-	fmt.Println("the len of p.servers:", len(p.Servers))
-	fmt.Printf("p.client.string=%s\n",p.Client.String())
+	Deb.Println("the udp message send from the remote:", addr.String())
+	Deb.Printf("p.client.string=%s\n",p.Client.String())
+	Deb.Println("the len of p.servers:", len(p.Servers))
 
-	// todo 不知道是什么原因， 当代理服务器在远程主机上时，QQ需要只会验证客户端IP。而无需验证端口。也就是说请求是客户端发来的端口也并无软用
+	// todo 不知道是什么原因， 当代理服务器在远程主机上时，QQ需要只会验证客户端IP。而无需验证端口。也就是说请求是客户端发来的端口也并无软用 不过这样写之后可以兼容正规socks5协议
 	if p.Client.IP.String() == uaddr.IP.String()  {
 		if p.Client.String() != uaddr.String() {
 			p.Client = uaddr			//改变p.client的port
@@ -116,7 +112,7 @@ func (p *Packet) Listen() {
 		// 客户端发来的消息
 		udpreqs, err := NewUDPReqSFromReader(reader, addr)
 		if err != nil {
-			log.Println(err)
+			Deb.Println(err)
 			return
 		}
 		//fmt.Printf("qq发来的frag: %v", udpreqs.Frag)
@@ -131,7 +127,7 @@ func (p *Packet) Listen() {
 			dst, err := net.ResolveUDPAddr(udpreqs.Network(), udpreqs.String())
 			//fmt.Println(dst)
 			if err != nil {
-				log.Println("这里是Listen() ",err)
+				Deb.Println("this is Listen() ",err)
 				return
 			}
 			p.Servers[udpreqs.String()] = dst
@@ -146,29 +142,37 @@ func (p *Packet) Listen() {
 
 		if src, ok := p.Servers[addr.String()]; ok {
 			// 当 远程主机
+			srcip := src.IP.To4()
+			srcipType := IPV4
+			if srcip == nil {
+				srcip = src.IP.To16()
+				srcipType = IPV6
+				if srcip == nil {
+					Deb.Println("Address error IP cannot be parsed into version 4 or 6")
+					return
+				}
+			}
 
 			message.dst = p.Client
-			fmt.Println(src)
+			Deb.Printf("Processing UDP messages from remote host %s", src)
 			// 如果发送的消息来自ip和port记录在servers中了，那么就执行转发.否则丢弃
 			_, err := Pipe(message, reader, func(data []byte) ([]byte, int) {
-				head := append([]byte{0x00, 0x00, p.Frag, 0x01}, src.IP.To4()...)
+				head := append([]byte{0x00, 0x00, p.Frag, srcipType}, srcip...)
 				head = append(head, uint8(src.Port>>8), uint8(src.Port))
 				data = append(head, data...)
 				return data, len(data)
 			})
 
 			if err != nil && err != io.ErrShortWrite {
-				log.Println(err)
+				Deb.Println(err)
 				return
 			}
-
-			//fmt.Println(len(message.Data),message.Data)
 
 			p.message <- message
 			return
 		} else {
 			// 若是无记录主机就丢弃信息
-			fmt.Println("丢弃来自主机", addr.String(), "的信息")
+			Deb.Printf("Discard UDP messages from remote host %s\n", addr.String())
 			return
 		}
 
