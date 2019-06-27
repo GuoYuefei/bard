@@ -2,7 +2,7 @@ package bard
 
 import (
 	"bufio"
-	"github.com/pkg/errors"
+	"errors"
 	"net"
 	"strconv"
 	"sync"
