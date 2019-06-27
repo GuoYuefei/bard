@@ -49,7 +49,7 @@ type Packet struct {
 	Frag uint8
 }
 
-func NewPacket(conn net.Conn, p net.PacketConn,cport int) (*Packet, error) {
+func NewPacket(conn net.Conn, p net.PacketConn, cport int) (*Packet, error) {
 	var err error
 	caddr := conn.RemoteAddr()
 	packet := &Packet{}
@@ -60,7 +60,7 @@ func NewPacket(conn net.Conn, p net.PacketConn,cport int) (*Packet, error) {
 	packet.message = make(chan *UdpMessage, MESSAGESIZE)
 
 	if addr, ok := caddr.(*net.TCPAddr); ok {
-		packet.Client, err = net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%d", addr.IP, cport))
+		packet.Client, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr.IP, cport))
 	} else {
 		err = fmt.Errorf("net.Addr must be tcpaddr ")
 	}
@@ -93,9 +93,9 @@ func (p *Packet) Listen() {
 
 	nr, addr, err := p.ReadFrom(buf)
 
-	//var uaddr *net.UDPAddr
-	//
-	//uaddr, _ = addr.(*net.UDPAddr)
+	var uaddr *net.UDPAddr
+
+	uaddr, _ = addr.(*net.UDPAddr)
 
 
 
@@ -107,10 +107,12 @@ func (p *Packet) Listen() {
 	fmt.Println("the message send from the remote:", addr.String())
 	fmt.Println("the len of p.servers:", len(p.Servers))
 	fmt.Printf("p.client.string=%s\n",p.Client.String())
-	if p.Client.String() == addr.String()  {
-		//if p.Client.String() != uaddr.String() {
-		//	p.Client = uaddr			//改变p.client的port
-		//}
+
+	// todo 不知道是什么原因， 当代理服务器在远程主机上时，QQ需要只会验证客户端IP。而无需验证端口。也就是说请求是客户端发来的端口也并无软用
+	if p.Client.IP.String() == uaddr.IP.String()  {
+		if p.Client.String() != uaddr.String() {
+			p.Client = uaddr			//改变p.client的port
+		}
 		// 客户端发来的消息
 		udpreqs, err := NewUDPReqSFromReader(reader, addr)
 		if err != nil {

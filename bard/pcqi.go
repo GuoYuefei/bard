@@ -55,7 +55,7 @@ func (p *PCQInfo) Response(conn net.Conn, config *Config) error {
 	//fmt.Println("ip is .............", ip.To4())
 	// 因为tcp情况下后面的ip端口都是无效信息， 所以不会影响什么。 这边是遵照回应udp的写法
 	resp := append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
-	resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+1)
+	resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)
 	_, err := conn.Write(resp)
 	return err
 }
@@ -108,14 +108,14 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 	} else if p.Cmd == 0x03 {
 		//fmt.Println("打个标记")
 
-		udpaddr, e := net.ResolveUDPAddr("udp4", ":"+strconv.Itoa(p.Dst.PortToInt()+1))
+		udpaddr, e := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(p.Dst.PortToInt()+2))
 
 		if e != nil {
 			log.Println(e)
 			return e
 		}
 
-		udpPacket, e := net.ListenUDP("udp4", udpaddr)
+		udpPacket, e := net.ListenUDP("udp", udpaddr)
 		//fmt.Println("p.dst.port", p.Dst.PortToInt())
 		//fmt.Println(udpPacket.LocalAddr())
 
