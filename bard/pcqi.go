@@ -137,6 +137,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 		}
 
 		packet, e := NewPacket(conn, udpPacket, p.Dst.PortToInt())
+		packet.SetTimeout(config.Timeout)
 
 		if e != nil {
 			Deb.Println("pcqi.go newPacket error:", e)

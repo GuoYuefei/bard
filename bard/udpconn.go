@@ -40,6 +40,7 @@ func (u *UdpMessage) GetDst() *net.UDPAddr {
 // 用于记录一对udp通道
 type Packet struct {
 	Packet net.PacketConn
+	timeout time.Duration
 	Client *net.UDPAddr
 	Servers map[string] *net.UDPAddr			// 远程主机应该有一个列表 客户端第一次发给远程主机的时候将其记录进Servers列表
 	Socks net.Conn
@@ -47,10 +48,15 @@ type Packet struct {
 	Frag uint8									// udp分段
 }
 
+func (p *Packet) SetTimeout(second int) {
+	p.timeout = time.Duration(second) * time.Second
+	_ = p.SetDeadline(time.Now().Add(p.timeout))
+}
+
 func NewPacket(conn net.Conn, p net.PacketConn, cport int) (*Packet, error) {
 	var err error
 	caddr := conn.RemoteAddr()				// socks5远程连接地址就是客户端地址
-	packet := &Packet{}
+	packet := &Packet{timeout:TIMEOUT}
 	packet.Frag = 0
 	packet.Socks = conn
 	packet.Packet = p
@@ -185,12 +191,15 @@ func (p *Packet) Listen() {
 
 
 func (p *Packet) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
-
-	return p.Packet.ReadFrom(b)
+	n, addr, err = p.Packet.ReadFrom(b)
+	_ = p.SetDeadline(time.Now().Add(p.timeout))
+	return
 }
 
 func (p *Packet) WriteTo(b []byte, addr net.Addr) (n int, err error) {
-	return p.Packet.WriteTo(b, addr)
+	n, err = p.Packet.WriteTo(b, addr)
+	_ = p.SetDeadline(time.Now().Add(p.timeout))
+	return
 }
 
 func (p *Packet) Close() error {
@@ -214,7 +223,11 @@ func (p *Packet) LocalAddr() net.Addr {
 }
 
 func (p *Packet) SetDeadline(t time.Time) error {
-	return p.Packet.SetDeadline(t)
+	err := p.Packet.SetDeadline(t)
+	if err != nil {
+		Slog.Printf("Packet set deadline error: %v", err)
+	}
+	return err
 }
 
 func (p *Packet) SetReadDeadline(t time.Time) error {

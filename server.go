@@ -9,6 +9,7 @@ const (
 	ConfigPath = "./debug/config/config.yml"
 )
 
+
 func main() {
 	// 开启debug
 	bard.Deb.Open = true
@@ -22,6 +23,7 @@ func main() {
 		bard.Logf("path error: %s is error", ConfigPath)
 		return
 	}
+
 	listener, err := net.Listen("tcp", ":"+config.ServerPortString())
 	if err != nil {
 		//log.Fatalln(err)
@@ -29,11 +31,15 @@ func main() {
 		return
 	}
 	for {
-		conn, err := listener.Accept()
+		netconn, err := listener.Accept()
+
 		if err != nil {
 			bard.Logln(err)
 			continue
 		}
+
+		// 为了timeout重写了一个类型
+		conn := bard.NewConnTimeout(netconn, config.Timeout)
 
 		go bard.HandleConn(conn, config)
 	}
