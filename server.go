@@ -12,7 +12,7 @@ const (
 
 func main() {
 	// 开启debug
-	//bard.Deb.Open = true
+	bard.Deb.Open = true
 
 	// 暂且关闭日志
 	//bard.Slog.Open = false

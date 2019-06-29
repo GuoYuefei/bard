@@ -10,10 +10,14 @@ import (
 )
 
 const (
-	SocksVersion = 5
-
+	SocksVersion = 0x05
+	REFUSE = 0xff
+	NOAUTH = 0x00
+	AuthUserPassword = 0x02				//RFC1929
+	UPSubProtocolVer = 0x01			// 子协议版本
 )
 
+var ErrorAuth = errors.New("Authentication failed")
 
 /**
 客户端发送要建立的代理连接的地址及端口 地址可能是域名、ipv4、ipv6
@@ -27,7 +31,7 @@ const (
 
  */
 
-func HandShake(r *bufio.Reader, conn net.Conn) error {
+func HandShake(r *bufio.Reader, conn net.Conn, config *Config) error {
 	version, err := r.ReadByte()
 
 	if err != nil {
@@ -49,13 +53,110 @@ func HandShake(r *bufio.Reader, conn net.Conn) error {
 	}
 	Deb.Printf("验证方式为： %v", buf)
 
-	resp := []byte{5, 0}
+	resp, ok := Auth(buf, r, conn, config)
+	if !ok {
+		Logf("Connection request from client IP %v, permission authentication failed", conn.RemoteAddr())
+	}
+
 	_, err = conn.Write(resp)
 	if err != nil {
 		return err
 	}
+	if !ok {
+		return ErrorAuth
+	}
 
 	return nil
+}
+
+/**
+	暂且支持最基本的两种方式 0x00, 0x02
+	其中0x02 使用0x01子协议	RFC1929
+	@param authMethods 		客户端支持的验证方式
+	@param config 				authMethod		服务器选择的验证方式和账户密码的配置信息
+	@param r conn				都是代表那个连接
+	@return []byte 			返回能最后一步需要回复应该要发送的认证回复的代码
+ */
+func Auth(authMethods []byte, r *bufio.Reader, conn net.Conn, config *Config) ([]byte, bool) {
+	for _, v := range authMethods {
+		if v == config.AuthMethod {
+			switch v {
+			case NOAUTH: 					// 无需认证
+				return []byte{SocksVersion, NOAUTH}, true
+			case AuthUserPassword:
+				// 用户名和密码 认证
+				return UserPassWD(r, conn, config.Users)
+			default:					// 无验证方式 就拒绝连接
+				goto Refuse
+			}
+		}
+	}
+	// should do something here
+	Refuse:
+		return []byte{SocksVersion, REFUSE}, false
+}
+
+func UserPassWD(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bool) {
+	var (
+		subProtocolVer byte
+		ulen byte
+		uname []byte
+		plen byte
+		passwd []byte
+	)
+	_, err := conn.Write([]byte{SocksVersion, AuthUserPassword})
+	if err != nil {
+		Logln("write auth method error:", err)
+		goto Refuse
+	}
+
+	subProtocolVer, err = r.ReadByte()
+
+
+	if subProtocolVer != UPSubProtocolVer {
+		Logf("The User/Password sub-protocol version is %d, not %d", subProtocolVer, UPSubProtocolVer)
+		goto Refuse		// 0x01代表拒绝  协议版本都对不上，小样还想连接
+	}
+
+	ulen, err = r.ReadByte()
+
+	if err != nil {
+		Logln("read len of username error:", err)
+		goto Refuse
+	}
+
+	uname = make([]byte, ulen)
+	_, err = io.ReadFull(r, uname)
+	if err != nil {
+		Logln("read uname error:", err)
+		goto Refuse
+	}
+
+	plen, err = r.ReadByte()
+	if err != nil {
+		Logln("read len of passwd error:", err)
+		goto Refuse
+	}
+
+	passwd = make([]byte, plen)
+	_, err = io.ReadFull(r, passwd)
+	if err != nil {
+		Logln("read passwd error:", err)
+		goto Refuse
+	}
+	Deb.Println(string(uname), string(passwd))
+
+	for _, v := range users {
+		Deb.Println(v.Username, v.Password)
+		if v.Username == string(uname) && v.Password == string(passwd) {
+			return []byte{UPSubProtocolVer, 0x00}, true				// 认证成功
+		}
+	}
+	// 账号密码不正确 就执行Refuse
+
+Refuse :
+		return []byte{UPSubProtocolVer, 0x01}, false
+
 }
 
 func ReadRemoteHost(r *bufio.Reader) (*Address, error) {
@@ -150,12 +251,13 @@ func HandleConn(conn net.Conn, config *Config) {
 		}
 	}()
 	r := bufio.NewReader(conn)
-	err := HandShake(r, conn)
+	err := HandShake(r, conn, config)
 
-	if err != nil {
-		Deb.Println(err)
+	if err != nil {			// 认证失败也会返回错误哦
 		return
 	}
+
+	// TODO 权限认证
 
 	pcq, err := ReadPCQInfo(r)
 	if err != nil {
