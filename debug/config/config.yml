@@ -1,3 +1,17 @@
 server: 192.168.1.16
 server_port: 1081
 timeout: 40
+
+
+# 支持的认证方式 ， 这边同一程序只支持一种验证方式
+# 0 表示无验证
+# 2 表示进行账号密码认证
+authority_method: 2
+
+users:
+  -
+    username: bard
+    password: bard1234
+  -
+    username: bard2
+    password: bard21234

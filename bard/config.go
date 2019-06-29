@@ -9,6 +9,13 @@ import (
 	"strconv"
 )
 
+type User struct {
+	Username string						`yaml:"username"`
+	Password string						`yaml:"password"`
+
+	// 以上基础信息
+}
+
 
 // 配置内容 配置文件使用json or yml， 简单嘛，易用嘛
 // 使用yml吧，哈哈哈， 就是为了学一种新的配置文件。 个人感觉json现在大多用于传输， yml适合做配置 因为还是需要有注释的
@@ -23,13 +30,16 @@ type Config struct {
 	// server 是server配置项     客户端四者都需要
 	// 以上是基础信息
 
+	AuthMethod byte			`yaml:"authority_method"`
+	Users []*User			`yaml:"users"`
+
 	Timeout int 			`yaml:"timeout"`
 
 }
 
 func (config *Config) String() string {
-	return fmt.Sprintf("Server=%v\nServerPort=%v\nLocalPort=%v\nLocalAddress=%v\n",
-		config.GetServers(), config.ServerPort, config.LocalPort, config.LocalAddress)
+	return fmt.Sprintf("Server=%v\nServerPort=%v\nLocalPort=%v\nLocalAddress=%v\nUsers=%v",
+		config.GetServers(), config.ServerPort, config.LocalPort, config.LocalAddress, config.Users)
 }
 
 func ParseConfig(path string) (config *Config, err error) {
