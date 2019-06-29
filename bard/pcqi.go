@@ -3,11 +3,14 @@ package bard
 import (
 	"bufio"
 	"errors"
-	"log"
 	"net"
 	"strconv"
 	"sync"
 )
+
+var ExceptionTurnOffRemoteTCP = errors.New("Turn off remote host TCP connection exception:")
+var ExceptionTurnOffClientTCP = errors.New("Turn off client host TCP connection exception:")
+var ExceptionUDPChannelOpen = errors.New("UDP channel failed to open:")
 
 // 主要用于socks5请求问题
 // Proxy connection request information
@@ -17,16 +20,6 @@ type PCQInfo struct {
 	Frag byte		// 仅用于Cmd=0x03时的udp传输
 	Rsv byte		// reserve
 	Dst *Address
-}
-
-func (p *PCQInfo) Remote() (net.Conn, error){
-	if p.Cmd == 0x01 {
-		return net.Dial("tcp", p.String())
-	} else if p.Cmd == 0x03 {
-		return net.Dial("udp", p.String())
-	} else {
-		return nil, errors.New("cmd为" + strconv.Itoa(int(p.Cmd)) +",暂不支持该命令")
-	}
 }
 
 func (p *PCQInfo) Network() string {
@@ -50,7 +43,7 @@ func (p *PCQInfo) Response(conn net.Conn, config *Config) error {
 	}
 
 	// 主要响应socks5最后的请求
-	// 服务器端server 一般只有一个ip todo 先别管多IP吧
+	// 服务器端server 一般只有一个ip todo 先别管多IP吧 而且还只支持ipv6
 	var ip = net.ParseIP(config.GetServers()[0])
 	//fmt.Println("ip is .............", ip.To4())
 	// 因为tcp情况下后面的ip端口都是无效信息， 所以不会影响什么。 这边是遵照回应udp的写法
@@ -65,17 +58,19 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 	if p.Cmd == 0x01 {
 		e = p.Response(conn, config)
 
-		var (
-			remote net.Conn
-		)
 
-		remote, e = net.Dial("tcp", p.Dst.String())
+		remote, e := net.Dial("tcp", p.Dst.String())
+		//remote.SetTimeout(config.Timeout)
+
 		if e != nil {
-			log.Println(e)
-			conn.Close()
 			return e
 		}
-		defer remote.Close()
+		defer func() {
+			e = remote.Close()
+			//if e != nil {
+			//	//Logff(ExceptionTurnOffRemoteTCP.Error()+"%v", LOG_WARNING, e)
+			//}
+		}()
 
 		wg := new(sync.WaitGroup)
 		wg.Add(2)
@@ -84,22 +79,31 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 			defer wg.Done()
 			written, e := Pipe(remote, r, nil)
 			if e != nil {
-				log.Printf("从r中写入到remote失败: %v", e)
+				Deb.Printf("从r中写入到remote失败: %v", e)
 			} else {
-				log.Printf("r -> remote 复制了%dB信息", written)
+				Deb.Printf("r -> remote 复制了%dB信息", written)
 			}
-			remote.Close()
+			// todo
+			e = remote.Close()
+			if e != nil {
+				Logff(ExceptionTurnOffRemoteTCP.Error()+"%v", LOG_WARNING, e)
+			}
 		}()
 
 		go func() {
 			defer wg.Done()
 			written, e := Pipe(conn, remote, nil)
 			if e != nil {
-				log.Printf("从remote中写入到r失败: %v", e)
+				Deb.Printf("从remote中写入到r失败: %v", e)
 			} else {
-				log.Printf("remote->r 复制了%dB信息", written)
+				Deb.Printf("remote->r 复制了%dB信息", written)
 			}
-			conn.Close()
+			//e = conn.Close()
+			//if e != nil {
+			//	Logff(ExceptionTurnOffClientTCP.Error()+"%v", LOG_WARNING, e)
+			//}
+
+			// conn 返回后有父级函数关闭 还有其timeout关闭
 		}()
 
 		wg.Wait()
@@ -111,7 +115,6 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 		udpaddr, e := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(p.Dst.PortToInt()+2))
 
 		if e != nil {
-			log.Println(e)
 			return e
 		}
 
@@ -120,14 +123,25 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 		//fmt.Println(udpPacket.LocalAddr())
 
 		if e != nil {
-			log.Printf("udp代理服务器端开启监听失败: %v", e)
+			Logff(ExceptionUDPChannelOpen.Error()+"%v", LOG_WARNING, e)
 			return e
 		}
 
 		// 对客户端回应
 		e = p.Response(conn, config)
 
+		if e != nil {
+			Deb.Println("pcqi.go response error:", e)
+			return e
+		}
+
 		packet, e := NewPacket(conn, udpPacket, p.Dst.PortToInt())
+		packet.SetTimeout(config.Timeout)
+
+		if e != nil {
+			Deb.Println("pcqi.go newPacket error:", e)
+			return e
+		}
 
 		wg := new(sync.WaitGroup)
 		wg. Add(2)
@@ -135,7 +149,13 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 		go func() {
 			defer wg.Done()
 			for {
-				packet.Listen()
+				err := packet.Listen()
+				if err != nil {
+					// 记录到日志 可能以后会出现其他错误 如果只是udp关闭的话就是正确的逻辑
+					Slog.Println("packet.listen close:", err)
+					close(packet.message)
+					break
+				}
 			}
 		}()
 
@@ -144,7 +164,8 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 			for {
 				_, err := packet.Request()
 				if err != nil {
-					continue
+					Slog.Println("packet.request close:", err)
+					break
 				}
 			}
 		}()

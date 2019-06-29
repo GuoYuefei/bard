@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net"
 )
 
@@ -31,7 +30,7 @@ func (u *UDPReqS) String() string {
 	ips, e := net.LookupIP(u.Dst.AddrString())
 
 	if e != nil {
-		log.Println("-------------dns解析失败---------------", e)
+		Deb.Println("-------------dns解析失败---------------", e)
 		return ""
 	}
 	//fmt.Println(ips)
@@ -51,7 +50,7 @@ func NewUDPReqS(packet net.PacketConn) (*UDPReqS, error) {
 
 	n, addr, err := packet.ReadFrom(buf[0:])
 	if err != nil {
-		log.Println(err)
+		Deb.Println(err)
 		return nil, err
 	}
 
@@ -59,7 +58,7 @@ func NewUDPReqS(packet net.PacketConn) (*UDPReqS, error) {
 	reader := bufio.NewReader(bytes.NewReader(buf[0:n]))
 
 
-	fmt.Printf("udp的消息来源 %s\n", addr)				//来源和我们要发送的地址相同
+	Deb.Printf("udp的消息来源 %s\n", addr)				//来源和我们要发送的地址相同
 
 	return NewUDPReqSFromReader(reader, addr)
 }
@@ -78,7 +77,10 @@ func NewUDPReqSFromReader(reader *bufio.Reader, addr net.Addr) (*UDPReqS, error)
 
 	u.Frag, _ = reader.ReadByte()
 
-	u.Dst, _ = ReadRemoteHost(reader)
+	u.Dst, err = ReadRemoteHost(reader)
+	if err != nil {
+		return nil, err
+	}
 
 	u.Data = new(bytes.Buffer)
 	_, err = io.Copy(u.Data, reader)
@@ -100,7 +102,7 @@ func NewUDPReqSFromReader(reader *bufio.Reader, addr net.Addr) (*UDPReqS, error)
 //	addr, err := net.ResolveUDPAddr(u.Network(), u.Dst.String())
 //
 //	if err != nil {
-//		log.Println("-------------udp addr error is %v ", err)
+//		Deb.Println("-------------udp addr error is %v ", err)
 //		return
 //	}
 //
@@ -111,7 +113,7 @@ func NewUDPReqSFromReader(reader *bufio.Reader, addr net.Addr) (*UDPReqS, error)
 //	//time.Sleep(3000*time.Millisecond)
 //
 //	if err != nil {
-//		log.Println("reqremote:---------------------- ", err)
+//		Deb.Println("reqremote:---------------------- ", err)
 //		return nil, err
 //	}
 //	var buf [4096]byte

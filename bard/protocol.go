@@ -4,8 +4,8 @@ package bard
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
-	"log"
 	"net"
 )
 
@@ -13,8 +13,6 @@ const (
 	SocksVersion = 5
 
 )
-
-
 
 
 /**
@@ -33,86 +31,109 @@ func HandShake(r *bufio.Reader, conn net.Conn) error {
 	version, err := r.ReadByte()
 
 	if err != nil {
-		log.Println(err)
 		return err
 	}
 
-	log.Printf("socks's version is %d", version)
-
 	if version != SocksVersion {
-		return errors.New("该协议不是socks5协议")
+		return fmt.Errorf("socks's version is %d", version)
 	}
 
 	nmethods, _ := r.ReadByte()
-	log.Printf("Methods' Lenght is %d", nmethods)
+	Deb.Printf("Methods' Lenght is %d", nmethods)
 
 	buf := make([]byte, nmethods)
 
-	io.ReadFull(r, buf)
-	log.Printf("验证方式为： %v", buf)
+	_, err = io.ReadFull(r, buf)
+	if err != nil {
+		return err
+	}
+	Deb.Printf("验证方式为： %v", buf)
 
 	resp := []byte{5, 0}
-	conn.Write(resp)
+	_, err = conn.Write(resp)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func ReadRemoteHost(r *bufio.Reader) (*Address, error) {
+	var err error
 	address := &Address{}
-	addrType, _ := r.ReadByte()
+	addrType, err := r.ReadByte()
+	var port [2]byte
+
+	if err != nil {
+		goto ErrorReturn
+	}
 
 	address.Atyp = addrType
 
 	switch addrType {
 	case 0x01:
 		var ip net.IP = make([]byte, 4)
-		io.ReadFull(r, ip)
+		_, err = io.ReadFull(r, ip)
 		address.Addr = ip
 
 	case 0x03:
 		domainLen, _ := r.ReadByte()
 		var domain []byte = make([]byte, domainLen)
-		io.ReadFull(r, domain)
+		_, err = io.ReadFull(r, domain)
 		address.Addr = domain
 
 	case 0x04:
 		var ip net.IP = make([]byte, 16)
-		io.ReadFull(r, ip)
+		_, err = io.ReadFull(r, ip)
 		address.Addr = ip
+	}
+	if err != nil {
+		goto ErrorReturn
 	}
 
 
-	var port [2]byte
-	io.ReadFull(r, port[0:])
+	_, err = io.ReadFull(r, port[0:])
+	if err != nil {
+		goto ErrorReturn
+	}
 	address.Port = port[0:]
 
 	return address, nil
+
+	ErrorReturn:
+		return nil, err
 
 }
 
 func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 	version, _ := r.ReadByte()
-	log.Printf("socks's version is %d", version)
+
 	if version != SocksVersion {
-		return nil, errors.New("该协议不是socks5协议")
+		return nil, errors.New("This is not the Socks5 protocol")
 	}
 
 	cmd, _ := r.ReadByte()
 
-	log.Println("socks' cmd:\t",cmd)
+	Deb.Println("socks' cmd:\t",cmd)
 	if cmd&0x01 != 0x01 {
 		// todo 现在仅支持0x03 and 0x01 即非bind请求
 		return nil, errors.New("客户端请求类型不为1或者3， 暂且只支持代理连接和udp")
 	}
 
 
-	rsv, _ := r.ReadByte()		//保留字段
+	rsv, err := r.ReadByte()		//保留字段
+
+	if err != nil {
+		return nil, err
+	}
 
 	// address应该能传出去的
-	address, _ := ReadRemoteHost(r)
-	//log.Println("连接具体地址为：",address)
+	address, err := ReadRemoteHost(r)
+	if err != nil {
+		return nil, err
+	}
 
 	return &PCQInfo{version, cmd,0x00,rsv, address}, nil
-
 }
 
 
@@ -121,27 +142,36 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 
 
 func HandleConn(conn net.Conn, config *Config) {
-	defer conn.Close()
+	defer func() {
+		err := conn.Close()
+		// timeout 可能会应发错误，原因此时conn已关闭
+		if err != nil {
+			Logff("Close socks5 connection error, the error is %v", LOG_WARNING, err)
+		}
+	}()
 	r := bufio.NewReader(conn)
 	err := HandShake(r, conn)
 
 	if err != nil {
-		log.Println(err)
+		Deb.Println(err)
 		return
 	}
 
 	pcq, err := ReadPCQInfo(r)
 	if err != nil {
-		log.Println(err)
+		Deb.Println(err)
 		// 拒绝请求处理
 		resp := []byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-		conn.Write(resp)
+		_, err := conn.Write(resp)
+		if err != nil {
+			Deb.Printf("refuse connect error:\t", err)
+		}
 		return
 	}
-	log.Printf("得到的完整的地址是：%s", pcq)
+	Deb.Printf("得到的完整的地址是：%s", pcq)
 	err = pcq.HandleConn(conn, r, config)
 	if err != nil {
-		log.Println(err)
+		Deb.Println(err)
 		return
 	}
 
