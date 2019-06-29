@@ -16,7 +16,7 @@ type Conn struct {
 }
 
 func NewConn(conn net.Conn) *Conn {
-	c := &Conn{conn, TIMEOUT}
+	c := &Conn{conn, 0}
 	return c
 }
 
@@ -28,7 +28,16 @@ func NewConnTimeout(conn net.Conn, timeout int) *Conn {
 
 func (c *Conn) SetTimeout(second int) {
 	c.timeout = time.Duration(second) * time.Second
-	_ = c.SetDeadline(time.Now().Add(c.timeout))
+
+	_ = c.SetDeadline(c.GetDeadline())
+}
+
+func (c *Conn) GetDeadline() time.Time {
+	Deadline := time.Time{}
+	if c.timeout > 0 {
+		Deadline = time.Now().Add(c.timeout)
+	}
+	return Deadline
 }
 
 
@@ -42,13 +51,13 @@ func (c *Conn) SetDeadline(t time.Time) error {
 
 func (c *Conn) Write(b []byte) (n int, err error) {
 	n, err = c.Conn.Write(b)
-	_ = c.SetDeadline(time.Now().Add(c.timeout))
+	_ = c.SetDeadline(c.GetDeadline())
 	return
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
 	n, err = c.Conn.Read(b)
-	_ = c.SetDeadline(time.Now().Add(c.timeout))
+	_ = c.SetDeadline(c.GetDeadline())
 	return
 }
 

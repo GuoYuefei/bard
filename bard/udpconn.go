@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"github.com/pkg/errors"
 	"io"
 	"net"
 	"time"
@@ -12,7 +13,9 @@ import (
 const (
 	BUFSIZE = 32 * 1024
 	MESSAGESIZE = 10
+
 )
+var ErrorChanelClose = errors.New("chanel is closed")
 
 type UdpMessage struct {
 	dst *net.UDPAddr
@@ -48,15 +51,23 @@ type Packet struct {
 	Frag uint8									// udp分段
 }
 
+func (p *Packet) GetDeadline() time.Time {
+	deadline := time.Time{}
+	if p.timeout > 0 {
+		deadline = time.Now().Add(p.timeout)
+	}
+	return deadline
+}
+
 func (p *Packet) SetTimeout(second int) {
 	p.timeout = time.Duration(second) * time.Second
-	_ = p.SetDeadline(time.Now().Add(p.timeout))
+	_ = p.SetDeadline(p.GetDeadline())
 }
 
 func NewPacket(conn net.Conn, p net.PacketConn, cport int) (*Packet, error) {
 	var err error
 	caddr := conn.RemoteAddr()				// socks5远程连接地址就是客户端地址
-	packet := &Packet{timeout:TIMEOUT}
+	packet := &Packet{timeout: 0}
 	packet.Frag = 0
 	packet.Socks = conn
 	packet.Packet = p
@@ -74,7 +85,11 @@ func NewPacket(conn net.Conn, p net.PacketConn, cport int) (*Packet, error) {
 
 // 将chan message的消息按指定位子请求出去
 func (p *Packet) Request() (n int, err error) {
-	message := <- p.message
+	message, ok := <- p.message
+	if !ok {
+		// 如果chanel已经关闭
+		return 0, ErrorChanelClose
+	}
 	i, err := p.WriteTo(message.Data, message.dst)
 
 	if err != nil {
@@ -83,6 +98,7 @@ func (p *Packet) Request() (n int, err error) {
 
 	if i != len(message.Data) {
 		Deb.Println("io 不完全")
+		err = nil			// io不完全的话就当没错
 	}
 
 	Deb.Printf("len of data:%d\tForwarding data： %v\nThe forwarding address is %v\n", i, message.Data, message.dst)
@@ -90,7 +106,7 @@ func (p *Packet) Request() (n int, err error) {
 	return i, err
 }
 
-func (p *Packet) Listen() {
+func (p *Packet) Listen() error {
 
 	var message = &UdpMessage{}
 	var buf = make([]byte, BUFSIZE)
@@ -98,7 +114,7 @@ func (p *Packet) Listen() {
 	nr, addr, err := p.ReadFrom(buf)
 	if err != nil {
 		Deb.Println(err)
-		return
+		return err
 	}
 
 	var uaddr *net.UDPAddr
@@ -110,7 +126,7 @@ func (p *Packet) Listen() {
 	Deb.Printf("p.client.string=%s\n",p.Client.String())
 	Deb.Println("the len of p.servers:", len(p.Servers))
 
-	// todo 不知道是什么原因， 当代理服务器在远程主机上时，QQ需要只会验证客户端IP。而无需验证端口。也就是说请求是客户端发来的端口也并无软用 不过这样写之后可以兼容正规socks5协议
+	// todo 当代理服务器在远程主机上时，QQ需要只会验证客户端IP。而无需验证端口。也就是说请求是客户端发来的端口信息也并无软用 不过这样写之后可以兼容正规socks5协议
 	if p.Client.IP.String() == uaddr.IP.String()  {
 		if p.Client.String() != uaddr.String() {
 			p.Client = uaddr			//改变p.client的port
@@ -119,28 +135,26 @@ func (p *Packet) Listen() {
 		udpreqs, err := NewUDPReqSFromReader(reader, addr)
 		if err != nil {
 			Deb.Println(err)
-			return
+			return err
 		}
-		//fmt.Printf("qq发来的frag: %v", udpreqs.Frag)
 		// 如果原本远程servers列表存在该远程主机，就直接提取
 		if dst, ok := p.Servers[udpreqs.String()]; ok {
 			message.dst = dst
 			message.Data = udpreqs.Data.Bytes()
 			p.message <- message
-			return
+			return err
 		} else {
 			// 原本列表中不存在
 			dst, err := net.ResolveUDPAddr(udpreqs.Network(), udpreqs.String())
 			//fmt.Println(dst)
 			if err != nil {
 				Deb.Println("this is Listen() ",err)
-				return
+				return err
 			}
 			p.Servers[udpreqs.String()] = dst
 			message.dst = dst
 			message.Data = udpreqs.Data.Bytes()
 			p.message <- message
-			return
 		}
 		// 客户端发来的消息 end
 	} else {
@@ -155,7 +169,7 @@ func (p *Packet) Listen() {
 				srcipType = IPV6
 				if srcip == nil {
 					Deb.Println("Address error IP cannot be parsed into version 4 or 6")
-					return
+					return err
 				}
 			}
 
@@ -171,18 +185,17 @@ func (p *Packet) Listen() {
 
 			if err != nil && err != io.ErrShortWrite {
 				Deb.Println(err)
-				return
+				return err
 			}
 
 			p.message <- message
-			return
 		} else {
 			// 若是无记录主机就丢弃信息
 			Deb.Printf("Discard UDP messages from remote host %s\n", addr.String())
-			return
 		}
 
 	}
+	return err
 
 
 }
@@ -192,13 +205,13 @@ func (p *Packet) Listen() {
 
 func (p *Packet) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	n, addr, err = p.Packet.ReadFrom(b)
-	_ = p.SetDeadline(time.Now().Add(p.timeout))
+	_ = p.SetDeadline(p.GetDeadline())
 	return
 }
 
 func (p *Packet) WriteTo(b []byte, addr net.Addr) (n int, err error) {
 	n, err = p.Packet.WriteTo(b, addr)
-	_ = p.SetDeadline(time.Now().Add(p.timeout))
+	_ = p.SetDeadline(p.GetDeadline())
 	return
 }
 
@@ -224,6 +237,16 @@ func (p *Packet) LocalAddr() net.Addr {
 
 func (p *Packet) SetDeadline(t time.Time) error {
 	err := p.Packet.SetDeadline(t)
+	if s, ok := p.Socks.(*Conn); ok {
+		e := s.SetDeadline(t)
+		if err != nil && e != nil {
+			err = fmt.Errorf("packet set deadline error: %v, and conn set deadline error: %v", err, e)
+		} else if e != nil && err == nil {
+			err = e
+		}
+	} else {
+		return errors.New("parameter is incorrect")
+	}
 	if err != nil {
 		Slog.Printf("Packet set deadline error: %v", err)
 	}

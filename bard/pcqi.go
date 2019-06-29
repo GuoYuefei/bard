@@ -58,11 +58,10 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 	if p.Cmd == 0x01 {
 		e = p.Response(conn, config)
 
-		var (
-			remote net.Conn
-		)
 
-		remote, e = net.Dial("tcp", p.Dst.String())
+		remote, e := net.Dial("tcp", p.Dst.String())
+		//remote.SetTimeout(config.Timeout)
+
 		if e != nil {
 			return e
 		}
@@ -104,7 +103,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 			//	Logff(ExceptionTurnOffClientTCP.Error()+"%v", LOG_WARNING, e)
 			//}
 
-			// conn 返回后有父级函数关闭
+			// conn 返回后有父级函数关闭 还有其timeout关闭
 		}()
 
 		wg.Wait()
@@ -150,7 +149,13 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 		go func() {
 			defer wg.Done()
 			for {
-				packet.Listen()
+				err := packet.Listen()
+				if err != nil {
+					// 记录到日志 可能以后会出现其他错误 如果只是udp关闭的话就是正确的逻辑
+					Slog.Println("packet.listen close:", err)
+					close(packet.message)
+					break
+				}
 			}
 		}()
 
@@ -159,7 +164,8 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 			for {
 				_, err := packet.Request()
 				if err != nil {
-					continue
+					Slog.Println("packet.request close:", err)
+					break
 				}
 			}
 		}()
