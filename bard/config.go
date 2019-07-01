@@ -35,6 +35,8 @@ type Config struct {
 
 	Timeout int 			`yaml:"timeout"`
 
+	Debug bool				`yaml:"debug"`
+	Slog bool				`yaml:"slog"`
 }
 
 func (config *Config) String() string {
