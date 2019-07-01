@@ -11,14 +11,11 @@ const (
 
 
 func main() {
-	// 开启debug
-	bard.Deb.Open = true
-
-	// 暂且关闭日志
-	//bard.Slog.Open = false
-
-
 	config, err := bard.ParseConfig(ConfigPath)
+
+	bard.Deb.Open = config.Debug
+	bard.Slog.Open = config.Slog
+
 	if err != nil {
 		bard.Logf("path error: %s is error", ConfigPath)
 		return
@@ -30,6 +27,7 @@ func main() {
 		bard.Logf("Failed to open the proxy server with the following error: %v", err)
 		return
 	}
+	bard.Logf("Open the proxy service with the address port of %s:%d", config.GetServers()[0], config.ServerPort)
 	for {
 		netconn, err := listener.Accept()
 
