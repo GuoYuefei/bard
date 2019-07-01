@@ -3,44 +3,21 @@ package bard
 
 import (
 	"bufio"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
-	"sync"
 )
 
 const (
-	SocksVersion = 5
-
+	SocksVersion = 0x05
+	REFUSE = 0xff
+	NOAUTH = 0x00
+	AuthUserPassword = 0x02				//RFC1929
+	UPSubProtocolVer = 0x01			// 子协议版本
 )
 
-type Address struct {
-	Atyp byte			// Atyp address type 0x01, 0x02, 0x04
-	Addr []byte
-	Port int16			// 16 bit
-}
-
-func (a *Address) AddrString() string {
-	var hostname string
-	if !(a.Atyp&0x02==0x02) {
-		// 就说明是非域名
-		var ip net.IP = a.Addr
-		hostname = ip.String()
-	} else {
-		hostname = string(a.Addr)
-	}
-
-	return hostname
-}
-
-func (a *Address) String() string {
-
-	return fmt.Sprintf("%s:%d", a.AddrString(), a.Port)
-}
-
+var ErrorAuth = errors.New("Authentication failed")
 
 /**
 客户端发送要建立的代理连接的地址及端口 地址可能是域名、ipv4、ipv6
@@ -54,184 +31,252 @@ func (a *Address) String() string {
 
  */
 
-// Proxy connection request information
-type PCQInfo struct {
-	Ver byte  		// version
-	Cmd byte		// command
-	Rsv byte		// reserve
-	Dst Address
-}
+func HandShake(r *bufio.Reader, conn net.Conn, config *Config) error {
+	version, err := r.ReadByte()
 
-// 解析请求信息 这个函数在程序中会往复使用，在其后的试探中应该加强其效率
-// 这个方法废弃 错误， 并且在之前的server中使用，现在的server未用
-func ParseReq(requset []byte) *PCQInfo {
-	var pcqi = &PCQInfo{}
-	pcqi.Ver = requset[0]
-	pcqi.Cmd = requset[1]
-	pcqi.Rsv = requset[2]
-	dst := Address{}
-	dst.Atyp = requset[3]
-
-	// 地址可能存在几种可能变长的域名，定常的ipv4和ipv6 ip那边有问题。。。。
-	switch dst.Atyp {
-	case uint8(0x01):
-		// ipv4
-		dst.Addr = append([]byte{}, requset[4: 8]...)				//取四五六七
-		dst.Port = int16(requset[8: 9][0]) * 256 + int16(requset[9: 10][0])
-	case 0x03:
-		// domain
-		l := requset[4]
-		dst.Addr = append([]byte{}, requset[5: 5+l]...)
-		dst.Port = int16(requset[5+l: 6+l][0]) * 256 + int16(requset[6+l: 7+l][0])
-	case 0x04:
-		// ipv6
-		dst.Addr = append([]byte{}, requset[4: 20]...)
-		dst.Port = int16(requset[20: 21][0]) * 256 + int16(requset[21: 22][0])
+	if err != nil {
+		return err
 	}
 
-	pcqi.Dst = dst
-	return pcqi
-}
-
-func HandShake(r *bufio.Reader, conn net.Conn) error {
-	version, _ := r.ReadByte()
-	log.Printf("socks's version is %d", version)
-
 	if version != SocksVersion {
-
-		return errors.New("该协议不是socks5协议")
+		return fmt.Errorf("socks's version is %d", version)
 	}
 
 	nmethods, _ := r.ReadByte()
-	log.Printf("Methods' Lenght is %d", nmethods)
+	Deb.Printf("Methods' Lenght is %d", nmethods)
 
 	buf := make([]byte, nmethods)
 
-	io.ReadFull(r, buf)
-	log.Printf("验证方式为： %v", buf)
+	_, err = io.ReadFull(r, buf)
+	if err != nil {
+		return err
+	}
+	Deb.Printf("验证方式为： %v", buf)
 
-	resp := []byte{5, 0}
-	conn.Write(resp)
+	resp, ok := Auth(buf, r, conn, config)
+	if !ok {
+		Logf("Connection request from client IP %v, permission authentication failed", conn.RemoteAddr())
+	}
+
+	_, err = conn.Write(resp)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrorAuth
+	}
+
 	return nil
 }
 
+/**
+	暂且支持最基本的两种方式 0x00, 0x02
+	其中0x02 使用0x01子协议	RFC1929
+	@param authMethods 		客户端支持的验证方式
+	@param config 				authMethod		服务器选择的验证方式和账户密码的配置信息
+	@param r conn				都是代表那个连接
+	@return []byte 			返回能最后一步需要回复应该要发送的认证回复的代码
+ */
+func Auth(authMethods []byte, r *bufio.Reader, conn net.Conn, config *Config) ([]byte, bool) {
+	for _, v := range authMethods {
+		if v == config.AuthMethod {
+			switch v {
+			case NOAUTH: 					// 无需认证
+				return []byte{SocksVersion, NOAUTH}, true
+			case AuthUserPassword:
+				// 用户名和密码 认证
+				return UserPassWD(r, conn, config.Users)
+			default:					// 无验证方式 就拒绝连接
+				goto Refuse
+			}
+		}
+	}
+	// should do something here
+	Refuse:
+		return []byte{SocksVersion, REFUSE}, false
+}
+
+func UserPassWD(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bool) {
+	var (
+		subProtocolVer byte
+		ulen byte
+		uname []byte
+		plen byte
+		passwd []byte
+	)
+	_, err := conn.Write([]byte{SocksVersion, AuthUserPassword})
+	if err != nil {
+		Logln("write auth method error:", err)
+		goto Refuse
+	}
+
+	subProtocolVer, err = r.ReadByte()
+
+
+	if subProtocolVer != UPSubProtocolVer {
+		Logf("The User/Password sub-protocol version is %d, not %d", subProtocolVer, UPSubProtocolVer)
+		goto Refuse		// 0x01代表拒绝  协议版本都对不上，小样还想连接
+	}
+
+	ulen, err = r.ReadByte()
+
+	if err != nil {
+		Logln("read len of username error:", err)
+		goto Refuse
+	}
+
+	uname = make([]byte, ulen)
+	_, err = io.ReadFull(r, uname)
+	if err != nil {
+		Logln("read uname error:", err)
+		goto Refuse
+	}
+
+	plen, err = r.ReadByte()
+	if err != nil {
+		Logln("read len of passwd error:", err)
+		goto Refuse
+	}
+
+	passwd = make([]byte, plen)
+	_, err = io.ReadFull(r, passwd)
+	if err != nil {
+		Logln("read passwd error:", err)
+		goto Refuse
+	}
+	Deb.Println(string(uname), string(passwd))
+
+	for _, v := range users {
+		Deb.Println(v.Username, v.Password)
+		if v.Username == string(uname) && v.Password == string(passwd) {
+			return []byte{UPSubProtocolVer, 0x00}, true				// 认证成功
+		}
+	}
+	// 账号密码不正确 就执行Refuse
+
+Refuse :
+		return []byte{UPSubProtocolVer, 0x01}, false
+
+}
+
 func ReadRemoteHost(r *bufio.Reader) (*Address, error) {
+	var err error
 	address := &Address{}
-	addrType, _ := r.ReadByte()
+	addrType, err := r.ReadByte()
+	var port [2]byte
+
+	if err != nil {
+		goto ErrorReturn
+	}
 
 	address.Atyp = addrType
 
 	switch addrType {
 	case 0x01:
 		var ip net.IP = make([]byte, 4)
-		io.ReadFull(r, ip)
+		_, err = io.ReadFull(r, ip)
 		address.Addr = ip
 
 	case 0x03:
 		domainLen, _ := r.ReadByte()
 		var domain []byte = make([]byte, domainLen)
-		io.ReadFull(r, domain)
+		_, err = io.ReadFull(r, domain)
 		address.Addr = domain
 
 	case 0x04:
 		var ip net.IP = make([]byte, 16)
-		io.ReadFull(r, ip)
+		_, err = io.ReadFull(r, ip)
 		address.Addr = ip
+	}
+	if err != nil {
+		goto ErrorReturn
 	}
 
 
-	var port int16
-	binary.Read(r, binary.BigEndian, &port)
-	address.Port = port
+	_, err = io.ReadFull(r, port[0:])
+	if err != nil {
+		goto ErrorReturn
+	}
+	address.Port = port[0:]
 
 	return address, nil
 
+	ErrorReturn:
+		return nil, err
+
 }
 
-func ReadAddr(r *bufio.Reader) (*Address, error) {
+func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 	version, _ := r.ReadByte()
-	log.Printf("socks's version is %d", version)
+
 	if version != SocksVersion {
-		return nil, errors.New("该协议不是socks5协议")
+		return nil, errors.New("This is not the Socks5 protocol")
 	}
 
 	cmd, _ := r.ReadByte()
 
-	if cmd != 1 {
-		return nil, errors.New("客户端请求类型不为1， 暂且只支持代理连接")
+	Deb.Println("socks' cmd:\t",cmd)
+	if cmd&0x01 != 0x01 {
+		// todo 现在仅支持0x03 and 0x01 即非bind请求
+		return nil, errors.New("客户端请求类型不为1或者3， 暂且只支持代理连接和udp")
 	}
 
-	r.ReadByte()		//保留字段
+
+	rsv, err := r.ReadByte()		//保留字段
+
+	if err != nil {
+		return nil, err
+	}
 
 	// address应该能传出去的
-	address, _ := ReadRemoteHost(r)
-	log.Println("连接具体地址为：",address)
+	address, err := ReadRemoteHost(r)
+	if err != nil {
+		return nil, err
+	}
 
-	return address, nil
-
+	return &PCQInfo{version, cmd,0x00,rsv, address}, nil
 }
 
-func HandleConn(conn net.Conn) {
-	defer conn.Close()
-	r := bufio.NewReader(conn)
-	err := HandShake(r, conn)
 
-	if err != nil {
-		log.Println(err)
+
+
+
+
+func HandleConn(conn net.Conn, config *Config) {
+	defer func() {
+		err := conn.Close()
+		// timeout 可能会应发错误，原因此时conn已关闭
+		if err != nil {
+			Logff("Close socks5 connection error, the error is %v", LOG_WARNING, err)
+		}
+	}()
+	r := bufio.NewReader(conn)
+	err := HandShake(r, conn, config)
+
+	if err != nil {			// 认证失败也会返回错误哦
 		return
 	}
 
-	addr, err := ReadAddr(r)
+	// TODO 权限认证
+
+	pcq, err := ReadPCQInfo(r)
 	if err != nil {
-		log.Println(err)
+		Deb.Println(err)
 		// 拒绝请求处理
 		resp := []byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-		conn.Write(resp)
+		_, err := conn.Write(resp)
+		if err != nil {
+			Deb.Printf("refuse connect error:\t", err)
+		}
 		return
 	}
-	log.Printf("得到的完整的地址是：%s", addr)
-	resp := []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-
-	conn.Write(resp)
-
-	var (
-		remote net.Conn
-	)
-
-	remote, err = net.Dial("tcp", addr.String())
+	Deb.Printf("得到的完整的地址是：%s", pcq)
+	err = pcq.HandleConn(conn, r, config)
 	if err != nil {
-		log.Println(err)
-		conn.Close()
+		Deb.Println(err)
 		return
 	}
-	defer remote.Close()
 
-	wg := new(sync.WaitGroup)
-	wg.Add(2)
-	//fmt.Println("xxxxx")
-	go func() {
-		defer wg.Done()
-		written, e := io.Copy(remote, r)
-		if e != nil {
-			log.Printf("从r中写入到remote失败: %v", e)
-		} else {
-			log.Printf("r -> remote 复制了%dB信息", written)
-		}
-		remote.Close()
-	}()
-
-	go func() {
-		defer wg.Done()
-		written, e := io.Copy(conn, remote)
-		if e != nil {
-			log.Printf("从remote中写入到r失败: %v", e)
-		} else {
-			log.Printf("remote->r 复制了%dB信息", written)
-		}
-		conn.Close()
-	}()
-
-	wg.Wait()
 	//remote.Close()
 	//conn.Close()
 }

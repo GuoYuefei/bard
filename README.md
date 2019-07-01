@@ -1,25 +1,49 @@
 - [Getting Started](#getting-started)
-  + [Install](#Install)
-  + [Usage](#Usage)
-
-- [License](#License)
-- [Preface](#Preface)
+  + [Install](#install)
+  + [Building the Application](#building-the-application)
+  + [Usage](#usage)
+- [License](#license)
+- [Contributing](#contributing)
+- [Preface](#preface)
 
 ## Getting Started
 
 ### Install
 
+```go
+go get -u install github.com/GuoYuefei/bard
+```
 
+### Building the Application
 
+Now that you have do something it's time to build your application:
 
+```go
+go install all-package
+go build server.go
+```
+
+Then you can see the executable file named server in your current folder.
 
 ### Usage
 
+The config.yml file in the ./debug/config folder. Configure the file based on the comment information in the file. 
 
+The path name of the configuration file relative to the execution file is ./Debug/config/config.yml
+
+At this time you can execute the program you just compiled.
+
+```go
+./server 
+```
 
 ## License
 
-I haven't decided yet
+GNU AFFERO GENERAL PUBLIC LICENSE (AGPLv3.0)
+
+## Contributing
+
+waiting.....
 
 ## Preface
 
