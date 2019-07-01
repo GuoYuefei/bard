@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/pkg/errors"
+	"errors"
 	"io"
 	"net"
 	"time"
