@@ -7,6 +7,7 @@ import (
 
 const (
 	ConfigPath = "./debug/config/config.yml"
+	PulginDir = "./debug/plugins"
 )
 
 
@@ -39,6 +40,23 @@ func main() {
 		// 为了timeout重写了一个类型
 		conn := bard.NewConnTimeout(netconn, config.Timeout)
 
-		go bard.HandleConn(conn, config)
+		go bard.ServerHandleConn(conn, config)
+	}
+}
+
+// 初始化插件
+// 把所有的插件总结成一个插件使用
+func initPlugin(plugindir string) (bard.IPlugin, error) {
+	ps, e := bard.PluginsFromDir(plugindir)
+	if e != nil {
+		// 要么出问题了，要么插件集合为空
+		return nil, e
+	}
+
+	var iplugin bard.IPlugin
+
+	// 接下来整合插件
+	for k,v := range ps.Pmap {
+
 	}
 }

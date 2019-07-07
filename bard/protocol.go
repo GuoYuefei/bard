@@ -9,6 +9,10 @@ import (
 	"net"
 )
 
+/**
+	这个文件是server程序独占。 考虑是否移除到包外
+ */
+
 const (
 	SocksVersion = 0x05
 	REFUSE = 0xff
@@ -31,7 +35,7 @@ var ErrorAuth = errors.New("Authentication failed")
 
  */
 
-func HandShake(r *bufio.Reader, conn net.Conn, config *Config) error {
+func ServerHandShake(r *bufio.Reader, conn net.Conn, config *Config) error {
 	version, err := r.ReadByte()
 
 	if err != nil {
@@ -242,7 +246,7 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 
 
 
-func HandleConn(conn net.Conn, config *Config) {
+func ServerHandleConn(conn net.Conn, config *Config) {
 	defer func() {
 		err := conn.Close()
 		// timeout 可能会应发错误，原因此时conn已关闭
@@ -251,7 +255,7 @@ func HandleConn(conn net.Conn, config *Config) {
 		}
 	}()
 	r := bufio.NewReader(conn)
-	err := HandShake(r, conn, config)
+	err := ServerHandShake(r, conn, config)
 
 	if err != nil {			// 认证失败也会返回错误哦
 		return
