@@ -72,8 +72,8 @@ func (d *Debug) Println(args ...interface{}) {
 // 系统日志记录
 // 日志一般分级 信息 警告 异常
 func NewSysLog() *Debug {
-	// TODO 文件的位子应该可以动态更改
-	logfile, e := os.OpenFile("./bard.log", os.O_APPEND|os.O_CREATE, os.ModeAppend)
+	// TODO 文件的位子应该可以动态更改     			修改日志文件权限为777，修复mac下第二次启动日志文件权限问题
+	logfile, e := os.OpenFile("./bard.log", os.O_APPEND|os.O_CREATE, os.ModePerm)
 	if e != nil {
 		// 交由外层函数处理吧
 		panic(e)

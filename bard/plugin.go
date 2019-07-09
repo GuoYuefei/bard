@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"plugin"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -18,11 +19,13 @@ const (
 
 var PLUGIN_ZERO = errors.New("No valid plugins under the folder")
 
+type IPluFun func([]byte) ([]byte, int)
+
 // 应该要设置热插拔
 type IPlugin interface {
 
 	// 伪装， 在socks5协议之前伪装协议头
-	Camouflage() ([]byte, int)
+	Camouflage([]byte) ([]byte, int)
 
 	// 防嗅探，连接建立过程或udp传输时使用 这里内容比较少可能使用非对称加密
 	AntiSniffing([]byte) ([]byte, int)
@@ -50,9 +53,108 @@ type IPlugin interface {
 // TODO 需要一个分析优先级的函数
 // 先定义函数返回值类型 一个uint8类型，来说明插件的作用函数是哪些
 // 再返回会一个长度是3的byte切片 说明C A O三函数的优先级
-func PluginPriority(iPlugin IPlugin) (uint8, []uint8) {
+func pluginPriority(iPlugin IPlugin) (uint8, []*sortPriFun) {
+	pris := make([]*sortPriFun, 3)
+	var prs uint8 = uint8(iPlugin.Priority()>>12)
 
+	// 下面的元素放入切片是没有做check， 所以需要外层函数对返回的prs做check
+	// 插件中的Camouflage函数可用
+	pris[0] = &sortPriFun{uint8(0x000f & iPlugin.Priority()), iPlugin.Camouflage}
+	// A
+	pris[1] = &sortPriFun{uint8((0x00f0 & iPlugin.Priority()) >> 4), iPlugin.AntiSniffing}
+	// O
+	pris[2] = &sortPriFun{uint8((0x0f00 & iPlugin.Priority()) >> 8), iPlugin.Ornament}
+
+	return prs, pris
 }
+
+// 排序时的中间类型不暴露
+type sortPriFun struct {
+	pri uint8			// 表示下面函数的优先级
+	fun IPluFun			// 一个插件中的优先函数
+}
+
+
+type sortPriFuns []*sortPriFun
+
+// 用于sort必须实现接口
+func (s sortPriFuns) Len() int {
+	return len(s)
+}
+
+func (s sortPriFuns) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+// 从大到小
+func (s sortPriFuns) Less(i, j int) bool {
+	return s[i].pri > s[j].pri
+}
+
+
+
+// 根据优先级排序
+func (p *Plugins)SortPriority() (Cs []IPluFun, As []IPluFun, Os []IPluFun){
+
+	var Cfuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
+	var Afuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
+	var Ofuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
+	for _, v := range p.Pmap {
+		u, fun := pluginPriority(v)
+		if u & 0x01 == 0x01 {
+			Cfuns = append(Cfuns, fun[0])
+		}
+
+		if u & 0x02 == 0x02 {
+			Afuns = append(Afuns, fun[1])
+		}
+
+		if u & 0x04 == 0x04 {
+			Ofuns = append(Ofuns, fun[2])
+		}
+	}
+	sort.Sort(Cfuns)
+	sort.Sort(Afuns)
+	sort.Sort(Ofuns)
+
+	Cs = make([]IPluFun, len(Cfuns))
+	As = make([]IPluFun, len(Afuns))
+	Os = make([]IPluFun, len(Ofuns))
+	for k, v := range Cfuns {
+		Cs[k] = v.fun
+	}
+	for k, v := range Afuns {
+		As[k] = v.fun
+	}
+	for k, v := range Ofuns {
+		Os[k] = v.fun
+	}
+
+	return Cs, As, Os
+}
+
+// 最后返回根据是否生效，以及各插件指定函数的优先级分别返回三个总函数
+func (p *Plugins)GetCAO() (C IPluFun, A IPluFun, O IPluFun) {
+	Cs, As, Os := p.SortPriority()
+
+	var genCAO = func(ss []IPluFun) (s IPluFun) {
+		s = func(in []byte) (out []byte, l int) {
+			out = in
+			for _, v := range Cs {
+				out, l = v(out)
+			}
+			return
+		}
+		return
+	}
+
+	C = genCAO(Cs)
+	A = genCAO(As)
+	O = genCAO(Os)
+	return
+}
+
+
 
 type Plugins struct {
 	Pmap map[string]IPlugin
@@ -73,6 +175,7 @@ func (p *Plugins) Register(plugin IPlugin) {
 	}
 }
 
+// 如果文件夹下没有有效插件，也会返回错误，该错误为PLUGIN_ZERO
 func PluginsFromDir(plugin_dir string) (ps *Plugins, e error) {
 	ps = &Plugins{}
 	plugindir, e := os.Open(plugin_dir)
@@ -92,7 +195,8 @@ func PluginsFromDir(plugin_dir string) (ps *Plugins, e error) {
 			// 不是插件文件就跳过
 			continue
 		}
-		pfile, e := plugin.Open(filepath.Join(plugin_dir, name))
+		filep := filepath.Join(plugin_dir, name)
+		pfile, e := plugin.Open(filep)
 		if e != nil {
 			Logff("Filename: %s,Failed to open plugin: %v", LOG_WARNING, name, e)
 			continue

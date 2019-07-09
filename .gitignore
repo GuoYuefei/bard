@@ -1,3 +1,4 @@
 /.idea/*
 *.log
-/debug/plugins/
+# 编译好的debug的插件不上传
+*.so
