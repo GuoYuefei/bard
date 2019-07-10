@@ -40,3 +40,11 @@ func TestPlugins_GetCAO(t *testing.T) {
 	A([]byte{})
 	O([]byte{})
 }
+
+func TestPlugins_ToBigIPlugin(t *testing.T) {
+	ps, _ := PluginsFromDir(PLUGIN_DIR)
+	plugin := ps.ToBigIPlugin()
+	plugin.Camouflage([]byte{})
+	plugin.AntiSniffing([]byte{})
+	plugin.Ornament([]byte{})
+}

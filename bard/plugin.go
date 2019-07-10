@@ -94,6 +94,7 @@ func (s sortPriFuns) Less(i, j int) bool {
 
 
 // 根据优先级排序
+// 返回的是三个函数根据优先级排好序的函数数组
 func (p *Plugins)SortPriority() (Cs []IPluFun, As []IPluFun, Os []IPluFun){
 
 	var Cfuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
@@ -152,6 +153,41 @@ func (p *Plugins)GetCAO() (C IPluFun, A IPluFun, O IPluFun) {
 	A = genCAO(As)
 	O = genCAO(Os)
 	return
+}
+
+type bigIPlugin struct {
+	C IPluFun
+	A IPluFun
+	O IPluFun
+}
+
+func (b *bigIPlugin)Camouflage(bs []byte) ([]byte, int) {
+	return b.C(bs)
+}
+func (b *bigIPlugin)AntiSniffing(bs []byte) ([]byte, int) {
+	return b.A(bs)
+}
+func (b *bigIPlugin)Ornament(bs []byte) ([]byte, int) {
+	return b.O(bs)
+}
+// 以下三函数只为实现接口
+func (b *bigIPlugin)Priority() uint16 {
+	return 0x0000
+}
+func (b *bigIPlugin)GetID() string {
+	return "v"
+}
+func (b *bigIPlugin)Version() string {
+	return "1.0.0"
+}
+
+
+// 将所有的插件按照各自的各自三函数优先级重组成一个IPlugin返回 这是除三函数以外接口中的其他方法无意义
+func (p *Plugins)ToBigIPlugin() IPlugin {
+	// 内部类型， 不暴露
+	C, A, O := p.GetCAO()
+	BP := &bigIPlugin{C, A, O}
+	return BP
 }
 
 
