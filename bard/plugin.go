@@ -19,19 +19,34 @@ const (
 
 var PLUGIN_ZERO = errors.New("No valid plugins under the folder")
 
-type IPluFun func([]byte) ([]byte, int)
+type IPluFun func([]byte, bool) ([]byte, int)
 
 // 应该要设置热插拔
+// 对io接口需要结合Pipe.go中的函数使用
 type IPlugin interface {
 
-	// 伪装， 在socks5协议之前伪装协议头
-	Camouflage([]byte) ([]byte, int)
+	// todo 每个函数都有两个状态，一个是接收时怎么做一个是发送时怎么做
+	// todo 所以函数签名还是要改
+	// 其中为了实现Camouflage还需要一个函数，表示混淆协议的结束符号
+	// 优先级最高的
+	EndCam() byte
 
-	// 防嗅探，连接建立过程或udp传输时使用 这里内容比较少可能使用非对称加密
-	AntiSniffing([]byte) ([]byte, int)
+	// 下面三函数的bool都表示是否是send消息，是执行send消息处理部分，否就执行get消息之后处理部分
+
+
+	// 伪装、混淆， 在socks5协议之前伪装协议头
+	// 也就是在socks5之前加一个啥协议什么的    ps。这里的形参看起来没啥用，我刚开始设计也只是为了统一三个函数的类型
+	// 仅在socks5握手时有用
+	// 这里的bool无用， 解开混淆只用EndCam.
+	Camouflage([]byte, bool) ([]byte, int)
+
+	// 防嗅探，连接建立过程 这里内容比较少可能使用非对称加密
+	// socks5握手阶段
+	AntiSniffing([]byte, bool) ([]byte, int)
 
 	// 操作传输内容
-	Ornament([]byte) ([]byte, int)
+	// tcp和udp的数据负载加密等可以用这个函数
+	Ornament([]byte, bool) ([]byte, int)
 
 	// 优先级，越是优先越后运行	0是最高优先级
 	// !!! 一个重要的解释：前面三位是保留位
@@ -55,15 +70,15 @@ type IPlugin interface {
 // 再返回会一个长度是3的byte切片 说明C A O三函数的优先级
 func pluginPriority(iPlugin IPlugin) (uint8, []*sortPriFun) {
 	pris := make([]*sortPriFun, 3)
-	var prs uint8 = uint8(iPlugin.Priority()>>12)
+	var prs = uint8(iPlugin.Priority()>>12)
 
 	// 下面的元素放入切片是没有做check， 所以需要外层函数对返回的prs做check
 	// 插件中的Camouflage函数可用
-	pris[0] = &sortPriFun{uint8(0x000f & iPlugin.Priority()), iPlugin.Camouflage}
+	pris[0] = &sortPriFun{uint8(0x000f & iPlugin.Priority()), iPlugin.Camouflage, iPlugin.GetID()}
 	// A
-	pris[1] = &sortPriFun{uint8((0x00f0 & iPlugin.Priority()) >> 4), iPlugin.AntiSniffing}
+	pris[1] = &sortPriFun{uint8((0x00f0 & iPlugin.Priority()) >> 4), iPlugin.AntiSniffing, iPlugin.GetID()}
 	// O
-	pris[2] = &sortPriFun{uint8((0x0f00 & iPlugin.Priority()) >> 8), iPlugin.Ornament}
+	pris[2] = &sortPriFun{uint8((0x0f00 & iPlugin.Priority()) >> 8), iPlugin.Ornament, iPlugin.GetID()}
 
 	return prs, pris
 }
@@ -71,7 +86,8 @@ func pluginPriority(iPlugin IPlugin) (uint8, []*sortPriFun) {
 // 排序时的中间类型不暴露
 type sortPriFun struct {
 	pri uint8			// 表示下面函数的优先级
-	fun IPluFun			// 一个插件中的优先函数
+	fun IPluFun			// 一个插件中的函数
+	id string			// 表示该插件的id
 }
 
 
@@ -95,7 +111,7 @@ func (s sortPriFuns) Less(i, j int) bool {
 
 // 根据优先级排序
 // 返回的是三个函数根据优先级排好序的函数数组
-func (p *Plugins)SortPriority() (Cs []IPluFun, As []IPluFun, Os []IPluFun){
+func (p *Plugins)SortPriority() (EC func() byte,Cs []IPluFun, As []IPluFun, Os []IPluFun){
 
 	var Cfuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
 	var Afuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
@@ -131,18 +147,20 @@ func (p *Plugins)SortPriority() (Cs []IPluFun, As []IPluFun, Os []IPluFun){
 		Os[k] = v.fun
 	}
 
-	return Cs, As, Os
+	EC = p.Pmap[Cfuns[len(Cfuns)-1].id].EndCam
+
+	return EC, Cs, As, Os
 }
 
 // 最后返回根据是否生效，以及各插件指定函数的优先级分别返回三个总函数
-func (p *Plugins)GetCAO() (C IPluFun, A IPluFun, O IPluFun) {
-	Cs, As, Os := p.SortPriority()
+func (p *Plugins)GetCAO() (EC func() byte, C IPluFun, A IPluFun, O IPluFun) {
+	EC, Cs, As, Os := p.SortPriority()
 
 	var genCAO = func(ss []IPluFun) (s IPluFun) {
-		s = func(in []byte) (out []byte, l int) {
+		s = func(in []byte, send bool) (out []byte, l int) {
 			out = in
-			for _, v := range Cs {
-				out, l = v(out)
+			for _, v := range ss {
+				out, l = v(out, send)
 			}
 			return
 		}
@@ -156,19 +174,24 @@ func (p *Plugins)GetCAO() (C IPluFun, A IPluFun, O IPluFun) {
 }
 
 type bigIPlugin struct {
+	EC func() byte
 	C IPluFun
 	A IPluFun
 	O IPluFun
 }
 
-func (b *bigIPlugin)Camouflage(bs []byte) ([]byte, int) {
-	return b.C(bs)
+func (b *bigIPlugin)EndCam() byte {
+	return b.EC()
 }
-func (b *bigIPlugin)AntiSniffing(bs []byte) ([]byte, int) {
-	return b.A(bs)
+
+func (b *bigIPlugin)Camouflage(bs []byte, send bool) ([]byte, int) {
+	return b.C(bs, send)
 }
-func (b *bigIPlugin)Ornament(bs []byte) ([]byte, int) {
-	return b.O(bs)
+func (b *bigIPlugin)AntiSniffing(bs []byte, send bool) ([]byte, int) {
+	return b.A(bs, send)
+}
+func (b *bigIPlugin)Ornament(bs []byte, send bool) ([]byte, int) {
+	return b.O(bs, send)
 }
 // 以下三函数只为实现接口
 func (b *bigIPlugin)Priority() uint16 {
@@ -185,8 +208,8 @@ func (b *bigIPlugin)Version() string {
 // 将所有的插件按照各自的各自三函数优先级重组成一个IPlugin返回 这是除三函数以外接口中的其他方法无意义
 func (p *Plugins)ToBigIPlugin() IPlugin {
 	// 内部类型， 不暴露
-	C, A, O := p.GetCAO()
-	BP := &bigIPlugin{C, A, O}
+	EC, C, A, O := p.GetCAO()
+	BP := &bigIPlugin{EC, C, A, O}
 	return BP
 }
 
@@ -212,9 +235,9 @@ func (p *Plugins) Register(plugin IPlugin) {
 }
 
 // 如果文件夹下没有有效插件，也会返回错误，该错误为PLUGIN_ZERO
-func PluginsFromDir(plugin_dir string) (ps *Plugins, e error) {
+func PluginsFromDir(pluginDir string) (ps *Plugins, e error) {
 	ps = &Plugins{}
-	plugindir, e := os.Open(plugin_dir)
+	plugindir, e := os.Open(pluginDir)
 
 	if e != nil {
 		Logff("Failed to open folder for plugin: %v", LOG_EXCEPTION, e)
@@ -231,7 +254,7 @@ func PluginsFromDir(plugin_dir string) (ps *Plugins, e error) {
 			// 不是插件文件就跳过
 			continue
 		}
-		filep := filepath.Join(plugin_dir, name)
+		filep := filepath.Join(pluginDir, name)
 		pfile, e := plugin.Open(filep)
 		if e != nil {
 			Logff("Filename: %s,Failed to open plugin: %v", LOG_WARNING, name, e)
@@ -271,7 +294,7 @@ func whoNewPlugin(iPlugin1 IPlugin, iPlugin2 IPlugin) IPlugin {
 		return nil
 	} else if ipv1 == nil {
 		return iPlugin2
-	} else if ipv1 == nil {
+	} else if ipv2 == nil {
 		return iPlugin1
 	}
 

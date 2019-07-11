@@ -19,32 +19,34 @@ func TestPluginsFromDir(t *testing.T) {
 		fmt.Printf("ps.Pmap is nil\n")
 		return
 	}
-	fmt.Printf("key\tvalue\n")
+	fmt.Printf("key\tvalue\tpriority\n")
 	for k, v := range ps.Pmap {
-		fmt.Printf("%s\t%v\n",k, v)
+		fmt.Printf("%s\t%v\t",k, v)
 		fmt.Printf("%x\n",v.Priority())
 	}
 }
 
 func TestPlugins_SortPriority(t *testing.T) {
 	ps, _ := PluginsFromDir(PLUGIN_DIR)
-	Cs, As, Os := ps.SortPriority()
-	fmt.Println(len(Cs), len(As), len(Os))
+	EC, Cs, As, Os := ps.SortPriority()
+	fmt.Println(EC(), len(Cs), len(As), len(Os))
 }
 
 func TestPlugins_GetCAO(t *testing.T) {
 	ps, _ := PluginsFromDir(PLUGIN_DIR)
-	C, A, O := ps.GetCAO()
+	EC, C, A, O := ps.GetCAO()
 	// 正确优先级数字大的先执行，也就是优先级低
-	C([]byte{})
-	A([]byte{})
-	O([]byte{})
+	fmt.Println(EC())
+	C([]byte{},true)
+	A([]byte{}, true)
+	O([]byte{}, true)
 }
 
 func TestPlugins_ToBigIPlugin(t *testing.T) {
 	ps, _ := PluginsFromDir(PLUGIN_DIR)
 	plugin := ps.ToBigIPlugin()
-	plugin.Camouflage([]byte{})
-	plugin.AntiSniffing([]byte{})
-	plugin.Ornament([]byte{})
+	fmt.Println(plugin.EndCam())
+	plugin.Camouflage([]byte{}, true)
+	plugin.AntiSniffing([]byte{}, true)
+	plugin.Ornament([]byte{}, true)
 }

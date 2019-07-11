@@ -4,13 +4,12 @@ import (
 	"io"
 )
 
-type FunOrnament = func([]byte) ([]byte, int)
+type FunOrnament func([]byte) ([]byte, int)
 
 
 func Pipe(dst io.Writer, src io.Reader, ornament FunOrnament) (written int64, err error) {
 	return PipeBuffer(dst, src, nil, ornament)
 }
-
 
 
 // 参照io.copyBuffer

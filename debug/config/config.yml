@@ -8,7 +8,7 @@ timeout: 40
 # Supported authentication methods                             支持的认证方式 ， 这边服务程序只支持一种验证方式，需要在二者中选择
 # 0 Represents that validation is not required                 表示无验证
 # 2 Indicates that account password verification is required   表示进行账号密码认证
-authority_method: 2
+authority_method: 0
 
 users:
   -
@@ -21,5 +21,5 @@ users:
 
 ## Debugging Open Switch and Switch of Logging System
 ## default： false
-debug: false
+debug: true
 slog: true

@@ -7,20 +7,14 @@ import (
 
 const (
 	ConfigPath = "./debug/config/config.yml"
-	PulginDir = "./debug/plugins"
+	PluginDir = "./debug/plugins"
 )
 
 
 func main() {
-	config, err := bard.ParseConfig(ConfigPath)
+	config := doConfig()
 
-	bard.Deb.Open = config.Debug
-	bard.Slog.Open = config.Slog
-
-	if err != nil {
-		bard.Logf("path error: %s is error", ConfigPath)
-		return
-	}
+	plugin := doPlugin()
 
 	listener, err := net.Listen("tcp", ":"+config.ServerPortString())
 	if err != nil {
@@ -40,23 +34,33 @@ func main() {
 		// 为了timeout重写了一个类型
 		conn := bard.NewConnTimeout(netconn, config.Timeout)
 
-		go bard.ServerHandleConn(conn, config)
+		go bard.ServerHandleConn(conn, config, plugin)
 	}
 }
 
-// 初始化插件
-// 把所有的插件总结成一个插件使用
-func initPlugin(plugindir string) (bard.IPlugin, error) {
-	ps, e := bard.PluginsFromDir(plugindir)
-	if e != nil {
-		// 要么出问题了，要么插件集合为空
-		return nil, e
+//------------------ 初始化函数------------------
+
+func doConfig() (config *bard.Config) {
+	config, err := bard.ParseConfig(ConfigPath)
+
+	if err != nil {
+		bard.Logf("path error: %s is error", ConfigPath)
+		return
 	}
 
-	var iplugin bard.IPlugin
+	bard.Deb.Open = config.Debug
+	bard.Slog.Open = config.Slog
 
-	// 接下来整合插件
-	for k,v := range ps.Pmap {
-
-	}
+	return
 }
+
+func doPlugin() bard.IPlugin {
+	ps, err := bard.PluginsFromDir(PluginDir)
+	if err != nil {
+		// 上面函数已有错误处理
+		return nil
+	}
+	plugin := ps.ToBigIPlugin()
+	return plugin
+}
+

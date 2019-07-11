@@ -180,6 +180,9 @@ func (p *Packet) Listen() error {
 				head := append([]byte{0x00, 0x00, p.Frag, srcipType}, srcip...)
 				head = append(head, uint8(src.Port>>8), uint8(src.Port))
 				data = append(head, data...)
+
+				// todo 数据要加密or压缩 此时应该把udp传送时的头信息一起处理 客户端直接解密or解压之后操作
+
 				return data, len(data)
 			})
 

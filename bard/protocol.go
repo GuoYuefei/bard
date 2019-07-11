@@ -214,7 +214,7 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 	version, _ := r.ReadByte()
 
 	if version != SocksVersion {
-		return nil, errors.New("This is not the Socks5 protocol")
+		return nil, fmt.Errorf("This is not the Socks5 protocol, version is %d", version)
 	}
 
 	cmd, _ := r.ReadByte()
@@ -243,10 +243,24 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 
 
 
+func dealCamouflage(r *bufio.Reader, iPlugin IPlugin) {
+	end := iPlugin.EndCam()
+
+	for {
+		b, e := r.ReadByte()
+		if e != nil {
+			// todo
+			return
+		}
+		if b == end {
+			break
+		}
+	}
+
+}
 
 
-
-func ServerHandleConn(conn net.Conn, config *Config) {
+func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
 	defer func() {
 		err := conn.Close()
 		// timeout 可能会应发错误，原因此时conn已关闭
@@ -254,7 +268,12 @@ func ServerHandleConn(conn net.Conn, config *Config) {
 			Logff("Close socks5 connection error, the error is %v", LOG_WARNING, err)
 		}
 	}()
+
 	r := bufio.NewReader(conn)
+
+	// 移除混淆和伪装
+	dealCamouflage(r, plugin)
+
 	err := ServerHandShake(r, conn, config)
 
 	if err != nil {			// 认证失败也会返回错误哦
