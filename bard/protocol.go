@@ -244,7 +244,14 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 
 
 func dealCamouflage(r *bufio.Reader, iPlugin IPlugin) {
+	if iPlugin == nil {
+		return
+	}
 	end := iPlugin.EndCam()
+	if end == END_FLAG {
+		// 表示没有混淆协议加入，不做前处理
+		return
+	}
 
 	for {
 		b, e := r.ReadByte()
@@ -260,6 +267,7 @@ func dealCamouflage(r *bufio.Reader, iPlugin IPlugin) {
 }
 
 
+// 去除混淆插件的无用内容
 func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
 	defer func() {
 		err := conn.Close()

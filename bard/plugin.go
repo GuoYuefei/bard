@@ -15,6 +15,7 @@ import (
 // !!!强制规定，所有插件都必须以V作为Symbol Name暴露出来
 const (
 	SYMBOL_NAME = "V"
+	END_FLAG = 0xff				// 默认bigplugin的EndCam返回内容。表示不作处理
 )
 
 var PLUGIN_ZERO = errors.New("No valid plugins under the folder")
@@ -118,6 +119,7 @@ func (p *Plugins)SortPriority() (EC func() byte,Cs []IPluFun, As []IPluFun, Os [
 	var Ofuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
 	for _, v := range p.Pmap {
 		u, fun := pluginPriority(v)
+		// 三if可以将无效函数排除在排序之外
 		if u & 0x01 == 0x01 {
 			Cfuns = append(Cfuns, fun[0])
 		}
@@ -147,7 +149,16 @@ func (p *Plugins)SortPriority() (EC func() byte,Cs []IPluFun, As []IPluFun, Os [
 		Os[k] = v.fun
 	}
 
-	EC = p.Pmap[Cfuns[len(Cfuns)-1].id].EndCam
+	if  Cfuns.Len() != 0 {
+		// 如果存在可用的伪装函数，那么EndCam可用
+		EC = p.Pmap[Cfuns[len(Cfuns)-1].id].EndCam
+	} else {
+		EC = func() byte {
+			// ascii只用7位，这个没被用 协议内容只可能是ascii信息
+			return END_FLAG
+		}
+	}
+
 
 	return EC, Cs, As, Os
 }
@@ -159,6 +170,8 @@ func (p *Plugins)GetCAO() (EC func() byte, C IPluFun, A IPluFun, O IPluFun) {
 	var genCAO = func(ss []IPluFun) (s IPluFun) {
 		s = func(in []byte, send bool) (out []byte, l int) {
 			out = in
+			l = len(out)
+
 			for _, v := range ss {
 				out, l = v(out, send)
 			}

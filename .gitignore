@@ -1,4 +1,11 @@
+# goland编辑器状态信息
 /.idea/*
+
+# 日志信息
 *.log
+
 # 编译好的debug的插件不上传
 *.so
+
+# go mod生成的sum文件
+go.sum
