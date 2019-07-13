@@ -15,12 +15,8 @@ import (
 
 const (
 	SocksVersion uint8 = 0x05
-	REFUSE uint8 = 0xff
 
-	// 认证方式
-	NOAUTH uint8 = 0x00
-	AuthUserPassword uint8 = 0x02				//RFC1929
-	UPSubProtocolVer uint8 = 0x01			// 上面子协议版本
+
 
 	// UDP ASSOCIATE  udp 协议请求代理
 	REQUEST_UDP uint8 = 0X03
@@ -76,6 +72,8 @@ func ServerHandShake(r *bufio.Reader, conn net.Conn, config *Config) error {
 		Logf("Connection request from client IP %v, permission authentication failed", conn.RemoteAddr())
 	}
 
+	// endtodo 丢弃缓冲区中所有内容，准备下轮对话
+	r.Reset(conn)
 	_, err = conn.Write(resp)
 	if err != nil {
 		return err
@@ -167,7 +165,7 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 }
 
 
-func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
+func ServerHandleConn(conn *Conn, config *Config) {
 	defer func() {
 		err := conn.Close()
 		// timeout 可能会应发错误，原因此时conn已关闭
@@ -176,10 +174,11 @@ func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
 		}
 	}()
 
-	r := bufio.NewReader(conn)
+	// 默认是4k，调高到6k
+	r := bufio.NewReaderSize(conn, 6*1024)
 
-	// 移除混淆和伪装
-	dealDeCamouflage(r, plugin)
+	// fixme 移除混淆和伪装   有问题 应该在conn中实现
+	//dealDeCamouflage(r, conn.Plugin())
 
 	err := ServerHandShake(r, conn, config)
 
@@ -192,8 +191,6 @@ func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
 		Deb.Println(err)
 		// 拒绝请求处理 				// 接受连接处理因为各自连接的不同需要分辨cmd字段之后分辨处理
 		resp := []byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-		// 混淆处理
-		resp, _ = dealEnCamouflage(resp, plugin)
 		_, err := conn.Write(resp)
 		if err != nil {
 			Deb.Printf("refuse connect error:\t", err)
@@ -201,7 +198,7 @@ func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
 		return
 	}
 	Deb.Printf("得到的完整的地址是：%s", pcq)
-	err = pcq.HandleConn(conn, r, config, plugin)
+	err = pcq.HandleConn(conn, config)
 	if err != nil {
 		Deb.Println(err)
 		return

@@ -25,7 +25,7 @@ func PipeBuffer(dst io.Writer, src io.Reader, buf []byte, ornament FunOrnament) 
 	}
 
 	if buf == nil {
-		size := 32 * 1024
+		size := BUFSIZE
 		if l, ok := src.(*io.LimitedReader); ok && int64(size) > l.N {
 			if l.N < 1 {
 				size = 1

@@ -6,6 +6,16 @@ import (
 	"net"
 )
 
+const (
+	REFUSE uint8 = 0xff
+
+
+	// 认证方式
+	NOAUTH uint8 = 0x00
+	AuthUserPassword uint8 = 0x02				//RFC1929
+	UPSubProtocolVer uint8 = 0x01			// 上面子协议版本
+)
+
 /**
 @description 	暂且支持最基本的两种方式 0x00, 0x02
 				其中0x02 使用0x01子协议	RFC1929

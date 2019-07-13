@@ -18,9 +18,16 @@ const (
 	END_FLAG = 0xff				// 默认bigplugin的EndCam返回内容。表示不作处理
 )
 
+const (
+	SEND = true
+	RECEIVE = false
+)
+
 var PLUGIN_ZERO = errors.New("No valid plugins under the folder")
 
 type IPluFun func([]byte, bool) ([]byte, int)
+
+type Send = bool
 
 // 应该要设置热插拔
 // 对io接口需要结合Pipe.go中的函数使用
@@ -33,21 +40,25 @@ type IPlugin interface {
 	EndCam() byte
 
 	// 下面三函数的bool都表示是否是send消息，是执行send消息处理部分，否就执行get消息之后处理部分
-
+	// node 注意 三个函数 在Send为false的情况下都不应该改变[]byte参数的引用，否则将不起作用. send=false此时返回值[]byte应该和传入形参的引用相同 return原实参引用
+	// node 注意 当Send为true时返回值的[]byte可以与传入形参的实参的引用不同
+	// node 所以 此时我们A函数不提倡使用压缩算法 否则在Receive的时候传入切片将不够用，会出现错误 经过C A函数处理后，长度应该要小于实参cap
+	// node 注意 我这边一直强调是引用，而非内容
 
 	// 伪装、混淆， 在socks5协议之前伪装协议头
 	// 也就是在socks5之前加一个啥协议什么的    ps。这里的形参看起来没啥用，我刚开始设计也只是为了统一三个函数的类型
 	// 仅在socks5握手时有用
 	// 这里的bool无用， 解开混淆只用EndCam.
-	Camouflage([]byte, bool) ([]byte, int)
+	Camouflage([]byte, Send) ([]byte, int)
 
-	// 防嗅探，连接建立过程 这里内容比较少可能使用非对称加密
-	// socks5握手阶段
-	AntiSniffing([]byte, bool) ([]byte, int)
+	// 防嗅探，
+	// socks5握手阶段开始每次socks5连接的io都要经过这个函数。 可以操作传输层之上的所有内容
+	AntiSniffing([]byte, Send) ([]byte, int)
 
 	// 操作传输内容
-	// tcp和udp的数据负载加密等可以用这个函数
-	Ornament([]byte, bool) ([]byte, int)
+	// 这个主要是用于操作远程服务器和客户端主机之间传送的内容 不包括socks5本身
+	// 如果启用了A函数，请不要再启用O函数
+	Ornament([]byte, Send) ([]byte, int)
 
 	// 优先级，越是优先越后运行	0是最高优先级
 	// !!! 一个重要的解释：前面三位是保留位
@@ -171,7 +182,6 @@ func (p *Plugins)GetCAO() (EC func() byte, C IPluFun, A IPluFun, O IPluFun) {
 		s = func(in []byte, send bool) (out []byte, l int) {
 			out = in
 			l = len(out)
-
 			for _, v := range ss {
 				out, l = v(out, send)
 			}

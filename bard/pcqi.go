@@ -34,7 +34,7 @@ func (p *PCQInfo) String() string {
 	return p.Dst.String()
 }
 
-func (p *PCQInfo) Response(conn net.Conn, config *Config, plugin IPlugin) error {
+func (p *PCQInfo) Response(conn net.Conn, config *Config) error {
 	var resp []byte
 	if p.Cmd == REQUEST_TCP {
 		// 请求tcp代理
@@ -50,8 +50,7 @@ func (p *PCQInfo) Response(conn net.Conn, config *Config, plugin IPlugin) error 
 		resp = append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
 		resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)
 	}
-	// 加入plugin中混淆、伪装处理
-	resp, _ = dealEnCamouflage(resp, plugin)
+
 	_, err := conn.Write(resp)
 	return err
 
@@ -59,9 +58,11 @@ func (p *PCQInfo) Response(conn net.Conn, config *Config, plugin IPlugin) error 
 }
 
 
-func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config, plugin IPlugin) (e error) {
+func (p *PCQInfo) HandleConn(conn net.Conn, config *Config) (e error) {
+	r := bufio.NewReaderSize(conn, 6*1024)
+
 	if p.Cmd == REQUEST_TCP {
-		e = p.Response(conn, config, plugin)
+		e = p.Response(conn, config)
 
 
 		remote, e := net.Dial("tcp", p.Dst.String())
@@ -86,7 +87,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config, plu
 			if e != nil {
 				Deb.Printf("从r中写入到remote失败: %v", e)
 			} else {
-				Deb.Printf("r -> remote 复制了%dB信息", written)
+				Deb.Printf("client -> remote 复制了%dB信息", written)
 			}
 			// todo
 			e = remote.Close()
@@ -101,7 +102,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config, plu
 			if e != nil {
 				Deb.Printf("从remote中写入到r失败: %v", e)
 			} else {
-				Deb.Printf("remote->r 复制了%dB信息", written)
+				Deb.Printf("remote->client 复制了%dB信息", written)
 			}
 			//e = conn.Close()
 			//if e != nil {
@@ -134,7 +135,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config, plu
 		}
 
 		// 对客户端回应
-		e = p.Response(conn, config, plugin)
+		e = p.Response(conn, config)
 
 		if e != nil {
 			Deb.Println("pcqi.go response error:", e)

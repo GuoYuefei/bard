@@ -33,8 +33,9 @@ func main() {
 
 		// 为了timeout重写了一个类型
 		conn := bard.NewConnTimeout(netconn, config.Timeout)
+		conn.Register(plugin)
 
-		go bard.ServerHandleConn(conn, config, plugin)
+		go bard.ServerHandleConn(conn, config)
 	}
 }
 
