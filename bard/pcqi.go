@@ -34,29 +34,34 @@ func (p *PCQInfo) String() string {
 	return p.Dst.String()
 }
 
-func (p *PCQInfo) Response(conn net.Conn, config *Config) error {
+func (p *PCQInfo) Response(conn net.Conn, config *Config, plugin IPlugin) error {
+	var resp []byte
+	if p.Cmd == REQUEST_TCP {
+		// 请求tcp代理
+		// 请求代理阶段，服务器返回成功标记
+		resp = []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
-	if p.Cmd == 0x01 {
-		resp := []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-		_, err := conn.Write(resp)
-		return err
+	} else if p.Cmd == REQUEST_UDP {
+		// 主要响应socks5最后的请求 cmd 为udp
+		// 服务器端server 一般只有一个ip todo 先别管多IP吧 而且还只支持ipv4
+		var ip = net.ParseIP(config.GetServers()[0])
+		// fmt.Println("ip is .............", ip.To4())
+		// 遵照回应udp的写法
+		resp = append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
+		resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)
 	}
-
-	// 主要响应socks5最后的请求
-	// 服务器端server 一般只有一个ip todo 先别管多IP吧 而且还只支持ipv6
-	var ip = net.ParseIP(config.GetServers()[0])
-	//fmt.Println("ip is .............", ip.To4())
-	// 因为tcp情况下后面的ip端口都是无效信息， 所以不会影响什么。 这边是遵照回应udp的写法
-	resp := append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
-	resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)
+	// 加入plugin中混淆、伪装处理
+	resp, _ = dealEnCamouflage(resp, plugin)
 	_, err := conn.Write(resp)
 	return err
+
+
 }
 
 
-func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e error) {
-	if p.Cmd == 0x01 {
-		e = p.Response(conn, config)
+func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config, plugin IPlugin) (e error) {
+	if p.Cmd == REQUEST_TCP {
+		e = p.Response(conn, config, plugin)
 
 
 		remote, e := net.Dial("tcp", p.Dst.String())
@@ -109,9 +114,10 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 		wg.Wait()
 		return nil
 
-	} else if p.Cmd == 0x03 {
+	} else if p.Cmd == REQUEST_UDP {
 		//fmt.Println("打个标记")
 
+		// todo 最终监听的udp端口还没定，暂且是client端口+2
 		udpaddr, e := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(p.Dst.PortToInt()+2))
 
 		if e != nil {
@@ -128,7 +134,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 		}
 
 		// 对客户端回应
-		e = p.Response(conn, config)
+		e = p.Response(conn, config, plugin)
 
 		if e != nil {
 			Deb.Println("pcqi.go response error:", e)
@@ -136,12 +142,11 @@ func (p *PCQInfo) HandleConn(conn net.Conn, r *bufio.Reader, config *Config) (e 
 		}
 
 		packet, e := NewPacket(conn, udpPacket, p.Dst.PortToInt())
-		packet.SetTimeout(config.Timeout)
-
 		if e != nil {
 			Deb.Println("pcqi.go newPacket error:", e)
 			return e
 		}
+		packet.SetTimeout(config.Timeout)
 
 		wg := new(sync.WaitGroup)
 		wg. Add(2)

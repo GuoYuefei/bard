@@ -14,11 +14,25 @@ import (
  */
 
 const (
-	SocksVersion = 0x05
-	REFUSE = 0xff
-	NOAUTH = 0x00
-	AuthUserPassword = 0x02				//RFC1929
-	UPSubProtocolVer = 0x01			// 子协议版本
+	SocksVersion uint8 = 0x05
+	REFUSE uint8 = 0xff
+
+	// 认证方式
+	NOAUTH uint8 = 0x00
+	AuthUserPassword uint8 = 0x02				//RFC1929
+	UPSubProtocolVer uint8 = 0x01			// 上面子协议版本
+
+	// UDP ASSOCIATE  udp 协议请求代理
+	REQUEST_UDP uint8 = 0X03
+	// connect  请求TCP连接
+	REQUEST_TCP uint8 = 0X01
+	// bind  特殊的tcp连接   据我所知只有ftp需要这个 暂时未实现   没用到过
+	REQUEST_BIND uint8 = 0X02
+
+	IPV4 uint8 = 0X01
+	DOMAIN uint8 = 0X03
+	IPV6 uint8 = 0X04
+
 )
 
 var ErrorAuth = errors.New("Authentication failed")
@@ -73,95 +87,6 @@ func ServerHandShake(r *bufio.Reader, conn net.Conn, config *Config) error {
 	return nil
 }
 
-/**
-	暂且支持最基本的两种方式 0x00, 0x02
-	其中0x02 使用0x01子协议	RFC1929
-	@param authMethods 		客户端支持的验证方式
-	@param config 				authMethod		服务器选择的验证方式和账户密码的配置信息
-	@param r conn				都是代表那个连接
-	@return []byte 			返回能最后一步需要回复应该要发送的认证回复的代码
- */
-func Auth(authMethods []byte, r *bufio.Reader, conn net.Conn, config *Config) ([]byte, bool) {
-	for _, v := range authMethods {
-		if v == config.AuthMethod {
-			switch v {
-			case NOAUTH: 					// 无需认证
-				return []byte{SocksVersion, NOAUTH}, true
-			case AuthUserPassword:
-				// 用户名和密码 认证
-				return UserPassWD(r, conn, config.Users)
-			default:					// 无验证方式 就拒绝连接
-				goto Refuse
-			}
-		}
-	}
-	// should do something here
-	Refuse:
-		return []byte{SocksVersion, REFUSE}, false
-}
-
-func UserPassWD(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bool) {
-	var (
-		subProtocolVer byte
-		ulen byte
-		uname []byte
-		plen byte
-		passwd []byte
-	)
-	_, err := conn.Write([]byte{SocksVersion, AuthUserPassword})
-	if err != nil {
-		Logln("write auth method error:", err)
-		goto Refuse
-	}
-
-	subProtocolVer, err = r.ReadByte()
-
-
-	if subProtocolVer != UPSubProtocolVer {
-		Logf("The User/Password sub-protocol version is %d, not %d", subProtocolVer, UPSubProtocolVer)
-		goto Refuse		// 0x01代表拒绝  协议版本都对不上，小样还想连接
-	}
-
-	ulen, err = r.ReadByte()
-
-	if err != nil {
-		Logln("read len of username error:", err)
-		goto Refuse
-	}
-
-	uname = make([]byte, ulen)
-	_, err = io.ReadFull(r, uname)
-	if err != nil {
-		Logln("read uname error:", err)
-		goto Refuse
-	}
-
-	plen, err = r.ReadByte()
-	if err != nil {
-		Logln("read len of passwd error:", err)
-		goto Refuse
-	}
-
-	passwd = make([]byte, plen)
-	_, err = io.ReadFull(r, passwd)
-	if err != nil {
-		Logln("read passwd error:", err)
-		goto Refuse
-	}
-	Deb.Println(string(uname), string(passwd))
-
-	for _, v := range users {
-		Deb.Println(v.Username, v.Password)
-		if v.Username == string(uname) && v.Password == string(passwd) {
-			return []byte{UPSubProtocolVer, 0x00}, true				// 认证成功
-		}
-	}
-	// 账号密码不正确 就执行Refuse
-
-Refuse :
-		return []byte{UPSubProtocolVer, 0x01}, false
-
-}
 
 func ReadRemoteHost(r *bufio.Reader) (*Address, error) {
 	var err error
@@ -242,32 +167,6 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 }
 
 
-
-func dealCamouflage(r *bufio.Reader, iPlugin IPlugin) {
-	if iPlugin == nil {
-		return
-	}
-	end := iPlugin.EndCam()
-	if end == END_FLAG {
-		// 表示没有混淆协议加入，不做前处理
-		return
-	}
-
-	for {
-		b, e := r.ReadByte()
-		if e != nil {
-			// todo
-			return
-		}
-		if b == end {
-			break
-		}
-	}
-
-}
-
-
-// 去除混淆插件的无用内容
 func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
 	defer func() {
 		err := conn.Close()
@@ -280,7 +179,7 @@ func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
 	r := bufio.NewReader(conn)
 
 	// 移除混淆和伪装
-	dealCamouflage(r, plugin)
+	dealDeCamouflage(r, plugin)
 
 	err := ServerHandShake(r, conn, config)
 
@@ -288,13 +187,13 @@ func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
 		return
 	}
 
-	// TODO 权限认证
-
 	pcq, err := ReadPCQInfo(r)
 	if err != nil {
 		Deb.Println(err)
-		// 拒绝请求处理
+		// 拒绝请求处理 				// 接受连接处理因为各自连接的不同需要分辨cmd字段之后分辨处理
 		resp := []byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+		// 混淆处理
+		resp, _ = dealEnCamouflage(resp, plugin)
 		_, err := conn.Write(resp)
 		if err != nil {
 			Deb.Printf("refuse connect error:\t", err)
@@ -302,7 +201,7 @@ func ServerHandleConn(conn net.Conn, config *Config, plugin IPlugin) {
 		return
 	}
 	Deb.Printf("得到的完整的地址是：%s", pcq)
-	err = pcq.HandleConn(conn, r, config)
+	err = pcq.HandleConn(conn, r, config, plugin)
 	if err != nil {
 		Deb.Println(err)
 		return

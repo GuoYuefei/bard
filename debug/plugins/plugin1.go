@@ -4,7 +4,7 @@ import "bard/debug"
 
 var V = debug.Plugin{
 	"0.2.2",
-	"a",
-	0x7983,
-	32,
+	"c",
+	0x3190,
+	0xff,
 }
