@@ -42,11 +42,11 @@ func (u *UdpMessage) GetDst() *net.UDPAddr {
 
 // 用于记录一对udp通道
 type Packet struct {
-	Packet net.PacketConn
+	Packet *net.UDPConn
 	timeout time.Duration
 	Client *net.UDPAddr
 	Servers map[string] *net.UDPAddr			// 远程主机应该有一个列表 客户端第一次发给远程主机的时候将其记录进Servers列表
-	Socks net.Conn
+	Socks *Conn
 	message chan *UdpMessage
 	Frag uint8									// udp分段
 }
@@ -64,10 +64,10 @@ func (p *Packet) SetTimeout(second int) {
 	_ = p.SetDeadline(p.GetDeadline())
 }
 
-func NewPacket(conn net.Conn, p net.PacketConn, cport int) (*Packet, error) {
+func NewPacket(conn *Conn, p *net.UDPConn, cport int) (*Packet, error) {
 	var err error
 	caddr := conn.RemoteAddr()				// socks5远程连接地址就是客户端地址
-	packet := &Packet{timeout: 0}
+	packet := &Packet{timeout: 10}
 	packet.Frag = 0
 	packet.Socks = conn
 	packet.Packet = p
@@ -121,7 +121,6 @@ func (p *Packet) Listen() error {
 
 	uaddr, _ = addr.(*net.UDPAddr)
 
-	reader := bufio.NewReader(bytes.NewReader(buf[0:nr]))
 	Deb.Println("the udp message send from the remote:", addr.String())
 	Deb.Printf("p.client.string=%s\n",p.Client.String())
 	Deb.Println("the len of p.servers:", len(p.Servers))
@@ -131,6 +130,11 @@ func (p *Packet) Listen() error {
 		if p.Client.String() != uaddr.String() {
 			p.Client = uaddr			//改变p.client的port
 		}
+		// endtodo 消息来自客户端就需要进行解密
+		if p.Socks.plugin != nil {
+			_, nr = p.Socks.plugin.Ornament(buf[0:nr], RECEIVE)
+		}
+		reader := bufio.NewReader(bytes.NewReader(buf[0:nr]))
 		// 客户端发来的消息
 		udpreqs, err := NewUDPReqSFromReader(reader, addr)
 		if err != nil {
@@ -161,6 +165,7 @@ func (p *Packet) Listen() error {
 		// 远程主机or其他
 
 		if src, ok := p.Servers[addr.String()]; ok {
+			reader := bufio.NewReader(bytes.NewReader(buf[0:nr]))
 			// 当 远程主机
 			srcip := src.IP.To4()
 			srcipType := IPV4
@@ -181,7 +186,10 @@ func (p *Packet) Listen() error {
 				head = append(head, uint8(src.Port>>8), uint8(src.Port))
 				data = append(head, data...)
 
-				// todo 数据要加密or压缩 此时应该把udp传送时的头信息一起处理 客户端直接解密or解压之后操作
+				// endtodo 数据要加密 对于远程主机发来的消息就应该加密发送给客户端 虽然可能插件不一定存在加密过程
+				if p.Socks.plugin != nil {
+					data, _ = p.Socks.plugin.Ornament(data, SEND)
+				}
 
 				return data, len(data)
 			})
@@ -208,11 +216,43 @@ func (p *Packet) Listen() error {
 
 func (p *Packet) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	n, addr, err = p.Packet.ReadFrom(b)
+
+	if err != nil {
+		return
+	}
+
+
+	// endtodo 不加入处理混淆  udp设计时不加入混淆，但是加入加密
+	// todo 处理加密
+	plugin := p.Socks.plugin
+
+	if plugin != nil {
+		uaddr, _ := addr.(*net.UDPAddr)
+		fmt.Println("ip: -------- ", uaddr)
+		if uaddr.IP.String() == p.Client.IP.String() {
+			// 如果是客户端发来的消息就做处理
+			//_, n = plugin.Camouflage(b[0:n], RECEIVE)
+			_, n = plugin.AntiSniffing(b[0:n], RECEIVE)
+		}
+	}
+
 	_ = p.SetDeadline(p.GetDeadline())
 	return
 }
 
 func (p *Packet) WriteTo(b []byte, addr net.Addr) (n int, err error) {
+
+	// todo 处理加密
+	plugin := p.Socks.plugin
+	if plugin != nil {
+		uaddr, _ := addr.(*net.UDPAddr)
+
+		if uaddr.IP.String() == p.Client.IP.String() {
+			// 如果是发送给客户端的就进行加密等动作
+			b, n = plugin.AntiSniffing(b, SEND)
+		}
+	}
+
 	n, err = p.Packet.WriteTo(b, addr)
 	_ = p.SetDeadline(p.GetDeadline())
 	return
@@ -240,15 +280,12 @@ func (p *Packet) LocalAddr() net.Addr {
 
 func (p *Packet) SetDeadline(t time.Time) error {
 	err := p.Packet.SetDeadline(t)
-	if s, ok := p.Socks.(*Conn); ok {
-		e := s.SetDeadline(t)
-		if err != nil && e != nil {
-			err = fmt.Errorf("packet set deadline error: %v, and conn set deadline error: %v", err, e)
-		} else if e != nil && err == nil {
-			err = e
-		}
-	} else {
-		return errors.New("parameter is incorrect")
+	e := p.Socks.SetDeadline(t)
+
+	if err != nil && e != nil {
+		err = fmt.Errorf("packet set deadline error: %v, and conn set deadline error: %v", err, e)
+	} else if e != nil && err == nil {
+		err = e
 	}
 	if err != nil {
 		Slog.Printf("Packet set deadline error: %v", err)

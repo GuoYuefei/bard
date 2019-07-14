@@ -59,14 +59,19 @@ func (c *Conn) SetDeadline(t time.Time) error {
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
-	var resp []byte
+	var resp []byte = b
 	p := c.plugin
+	if p == nil {
+		goto Write
+	}
+
 	// 处理tcp负载数据内容
-	resp, n = p.AntiSniffing(b, SEND)
+	resp, n = p.AntiSniffing(resp, SEND)
 
 	// 处理添加混淆内容
 	resp, n = p.Camouflage(resp, SEND)
 
+Write:
 	n, err = c.Conn.Write(resp)
 	_ = c.SetDeadline(c.GetDeadline())
 	return
@@ -78,9 +83,15 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 
 	//var req []byte
 	n, err = c.Conn.Read(b)
+	_ = c.SetDeadline(c.GetDeadline())
+
+	if c.plugin == nil {
+		return
+	}
+
 	//fmt.Println("111111    ", n)
 	p := c.plugin
-	// todo 可能b会存在太小而无法容下处理后的数据 这里不考虑压缩算法
+	// todo 可能b会存在太小而无法容下处理后的数据  所以这里不考虑压缩算法
 	// 处理摘除混淆
 	_, n = p.Camouflage(b[0:n], RECEIVE)
 
@@ -90,7 +101,6 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	_, n = p.AntiSniffing(b[0:n], RECEIVE)
 	// 可能会出现len(b) > n的情况，具体看插件实现
 	//fmt.Println("----2-----",n)
-	_ = c.SetDeadline(c.GetDeadline())
 	return
 }
 

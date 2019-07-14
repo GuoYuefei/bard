@@ -33,6 +33,7 @@ type Send = bool
 // 对io接口需要结合Pipe.go中的函数使用
 type IPlugin interface {
 
+	// node EndCam 废弃
 	// todo 每个函数都有两个状态，一个是接收时怎么做一个是发送时怎么做
 	// todo 所以函数签名还是要改
 	// 其中为了实现Camouflage还需要一个函数，表示混淆协议的结束符号
@@ -57,7 +58,7 @@ type IPlugin interface {
 
 	// 操作传输内容
 	// 这个主要是用于操作远程服务器和客户端主机之间传送的内容 不包括socks5本身
-	// 如果启用了A函数，请不要再启用O函数
+	// node 如果启用了A函数，请不要再启用O函数				A函数会将socks5协议加密，更加安全
 	Ornament([]byte, Send) ([]byte, int)
 
 	// 优先级，越是优先越后运行	0是最高优先级

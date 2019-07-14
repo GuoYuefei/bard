@@ -1,6 +1,6 @@
 package bard
 
-
+// node 原本想废弃，现留一有用函数
 
 // 处理插件 c函数 De取自Decipher前缀
 //func dealDeCamouflage(r *bufio.Reader, iPlugin IPlugin) {
@@ -36,4 +36,13 @@ func dealEnAntiSniffing(bs []byte, plugin IPlugin) ([]byte, int) {
 
 func dealDeAntiSniffing(bs []byte, plugin IPlugin) ([]byte, int) {
 	return plugin.AntiSniffing(bs, RECEIVE)
+}
+
+func dealOrnament(send Send, plugin IPlugin) FunOrnament {
+	if plugin == nil {
+		return nil
+	}
+	return func(bs []byte) (bytes []byte, i int) {
+		return plugin.Ornament(bs, send)
+	}
 }

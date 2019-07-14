@@ -34,7 +34,7 @@ func (p *PCQInfo) String() string {
 	return p.Dst.String()
 }
 
-func (p *PCQInfo) Response(conn net.Conn, config *Config) error {
+func (p *PCQInfo) Response(conn *Conn, config *Config) error {
 	var resp []byte
 	if p.Cmd == REQUEST_TCP {
 		// 请求tcp代理
@@ -49,6 +49,7 @@ func (p *PCQInfo) Response(conn net.Conn, config *Config) error {
 		// 遵照回应udp的写法
 		resp = append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
 		resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)
+		//Deb.Println("告诉客户端我监听的udp端口：", p.Dst.Port )
 	}
 
 	_, err := conn.Write(resp)
@@ -58,7 +59,7 @@ func (p *PCQInfo) Response(conn net.Conn, config *Config) error {
 }
 
 
-func (p *PCQInfo) HandleConn(conn net.Conn, config *Config) (e error) {
+func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 	r := bufio.NewReaderSize(conn, 6*1024)
 
 	if p.Cmd == REQUEST_TCP {
@@ -83,7 +84,8 @@ func (p *PCQInfo) HandleConn(conn net.Conn, config *Config) (e error) {
 		//fmt.Println("xxxxx")
 		go func() {
 			defer wg.Done()
-			written, e := Pipe(remote, r, nil)
+			// 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
+			written, e := Pipe(remote, r, dealOrnament(RECEIVE, conn.plugin))
 			if e != nil {
 				Deb.Printf("从r中写入到remote失败: %v", e)
 			} else {
@@ -98,7 +100,8 @@ func (p *PCQInfo) HandleConn(conn net.Conn, config *Config) (e error) {
 
 		go func() {
 			defer wg.Done()
-			written, e := Pipe(conn, remote, nil)
+			// 从远程主机那获取内容是明文（我方没加密）， 所以需要对其加密发送给客户端
+			written, e := Pipe(conn, remote, dealOrnament(SEND, conn.plugin))
 			if e != nil {
 				Deb.Printf("从remote中写入到r失败: %v", e)
 			} else {
@@ -119,6 +122,7 @@ func (p *PCQInfo) HandleConn(conn net.Conn, config *Config) (e error) {
 		//fmt.Println("打个标记")
 
 		// todo 最终监听的udp端口还没定，暂且是client端口+2
+		//fmt.Println("实际监听端口： ", p.Dst.PortToInt()+2)
 		udpaddr, e := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(p.Dst.PortToInt()+2))
 
 		if e != nil {
@@ -147,6 +151,8 @@ func (p *PCQInfo) HandleConn(conn net.Conn, config *Config) (e error) {
 			Deb.Println("pcqi.go newPacket error:", e)
 			return e
 		}
+
+		// todo udp通道的时常应该要考虑下
 		packet.SetTimeout(config.Timeout)
 
 		wg := new(sync.WaitGroup)
