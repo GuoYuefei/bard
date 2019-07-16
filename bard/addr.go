@@ -15,7 +15,7 @@ func (u *UDPAddress) Network() string {
 }
 
 type Address struct {
-	Atyp byte			// Atyp address type 0x01, 0x02, 0x04
+	Atyp byte			// Atyp address type 0x01, 0x03, 0x04 => ipv4 domain ipv6
 	Addr []byte
 	Port []byte			// 16 bit
 }

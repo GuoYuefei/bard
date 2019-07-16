@@ -165,48 +165,7 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 }
 
 
-func ServerHandleConn(conn *Conn, config *Config) {
-	defer func() {
-		err := conn.Close()
-		// timeout 可能会应发错误，原因此时conn已关闭
-		if err != nil {
-			Logff("Close socks5 connection error, the error is %v", LOG_WARNING, err)
-		}
-	}()
 
-	// 默认是4k，调高到6k
-	r := bufio.NewReaderSize(conn, 6*1024)
-
-	// fixme 移除混淆和伪装   有问题 应该在conn中实现
-	//dealDeCamouflage(r, conn.Plugin())
-
-	err := ServerHandShake(r, conn, config)
-
-	if err != nil {			// 认证失败也会返回错误哦
-		return
-	}
-
-	pcq, err := ReadPCQInfo(r)
-	if err != nil {
-		Deb.Println(err)
-		// 拒绝请求处理 				// 接受连接处理因为各自连接的不同需要分辨cmd字段之后分辨处理
-		resp := []byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-		_, err := conn.Write(resp)
-		if err != nil {
-			Deb.Printf("refuse connect error:\t", err)
-		}
-		return
-	}
-	Deb.Printf("得到的完整的地址是：%s", pcq)
-	err = pcq.HandleConn(conn, config)
-	if err != nil {
-		Deb.Println(err)
-		return
-	}
-
-	//remote.Close()
-	//conn.Close()
-}
 
 
 

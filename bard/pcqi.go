@@ -34,6 +34,10 @@ func (p *PCQInfo) String() string {
 	return p.Dst.String()
 }
 
+func (p *PCQInfo) ToBytes() []byte {
+	return append([]byte{p.Ver, p.Cmd, 0x00}, p.Dst.ToProtocol()...)
+}
+
 func (p *PCQInfo) Response(conn *Conn, config *Config) error {
 	var resp []byte
 	if p.Cmd == REQUEST_TCP {
@@ -55,7 +59,22 @@ func (p *PCQInfo) Response(conn *Conn, config *Config) error {
 	_, err := conn.Write(resp)
 	return err
 
+}
 
+// 原本可以用来复用正常服务器的，现在需要这个函数来做本地服务器的数据传输
+// 暂且客户端只考虑tcp
+func (p *PCQInfo) LocalServerHandleConn(conn *Conn, config *Config, message chan<- *Message) (err error) {
+
+
+	csm := &Message{}
+	_, err = Pipe(csm, conn, nil)
+	if err != nil {
+		return
+	}
+
+	message <- csm
+
+	return
 }
 
 

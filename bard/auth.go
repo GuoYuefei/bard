@@ -26,6 +26,7 @@ const (
 */
 func Auth(authMethods []byte, r *bufio.Reader, conn net.Conn, config *Config) ([]byte, bool) {
 	for _, v := range authMethods {
+		// 为服务器设定的认证方式，只提供一种
 		if v == config.AuthMethod {
 			switch v {
 			case NOAUTH: 					// 无需认证

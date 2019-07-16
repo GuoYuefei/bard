@@ -19,22 +19,23 @@ var ErrorChanelClose = errors.New("chanel is closed")
 
 type UdpMessage struct {
 	dst *net.UDPAddr
-	Data []byte
+	//Data []byte
+	*Message
 }
 
-// 不知道对不对还未验证
-func (u *UdpMessage) Read(b []byte) (n int, err error) {
-	return bytes.NewReader(u.Data).Read(b)
-}
-
-func (u *UdpMessage) Write(b []byte) (n int, err error) {
-	write := new(bytes.Buffer)
-	// todo 可能有错
-	i, err := write.Write(b)
-	u.Data = write.Bytes()
-
-	return i, err
-}
+//// 不知道对不对还未验证
+//func (u *UdpMessage) Read(b []byte) (n int, err error) {
+//	return bytes.NewReader(u.Data).Read(b)
+//}
+//
+//func (u *UdpMessage) Write(b []byte) (n int, err error) {
+//	write := new(bytes.Buffer)
+//	// todo 可能有错
+//	i, err := write.Write(b)
+//	u.Data = write.Bytes()
+//
+//	return i, err
+//}
 
 func (u *UdpMessage) GetDst() *net.UDPAddr {
 	return u.dst
@@ -270,6 +271,8 @@ func (p *Packet) Close() error {
 	if err2 != nil {
 		err = err2
 	}
+	// todo chan 应该要关闭
+	//close(p.message)
 
 	return err
 }
