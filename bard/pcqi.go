@@ -82,14 +82,22 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 	r := bufio.NewReaderSize(conn, 6*1024)
 
 	if p.Cmd == REQUEST_TCP {
-		e = p.Response(conn, config)
+
 
 
 		remote, e := net.Dial("tcp", p.Dst.String())
 		//remote.SetTimeout(config.Timeout)
 
 		if e != nil {
-			return e
+			// 连接远程服务器失败就向客户端返回错误
+			Deb.Println(e)
+			// 拒绝请求处理 				// 接受连接处理因为各自连接的不同需要分辨cmd字段之后分辨处理
+			resp := []byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+			_, err := conn.Write(resp)
+			if err != nil {
+				Deb.Printf("refuse connect error:\t", err)
+			}
+			return
 		}
 		defer func() {
 			e = remote.Close()
@@ -97,6 +105,11 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			//	//Logff(ExceptionTurnOffRemoteTCP.Error()+"%v", LOG_WARNING, e)
 			//}
 		}()
+
+		e = p.Response(conn, config)
+		if e != nil {
+			return
+		}
 
 		wg := new(sync.WaitGroup)
 		wg.Add(2)
@@ -154,7 +167,13 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 
 		if e != nil {
 			Logff(ExceptionUDPChannelOpen.Error()+"%v", LOG_WARNING, e)
-			return e
+			// 拒绝请求处理 				// 接受连接处理因为各自连接的不同需要分辨cmd字段之后分辨处理
+			resp := []byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+			_, err := conn.Write(resp)
+			if err != nil {
+				Deb.Printf("refuse connect error:\t", err)
+			}
+			return
 		}
 
 		// 对客户端回应

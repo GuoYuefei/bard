@@ -81,25 +81,7 @@ func localServerHandleConn(conn *bard.Conn, config *bard.Config) {
 	// todo 2 处理返回消息还需要一个协程
 	wg.Add(2)
 
-	cToSMessage := make(chan *bard.Message, bard.MESSAGESIZE)
 
-
-	if err != nil {
-		bard.Deb.Println(err)
-		return
-	}
-	go func() {
-		// 本地服务器回复 成功
-		err = pcq.Response(conn, config)
-		// 开始取消息，让另一个客户端协程去发送消息
-		for {
-			e := pcq.LocalServerHandleConn(conn, config, cToSMessage)
-			if e != nil {
-				wg.Done()
-				break
-			}
-		}
-	}()
 
 	wg.Wait()
 }
