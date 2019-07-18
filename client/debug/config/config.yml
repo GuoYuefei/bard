@@ -1,8 +1,11 @@
 # Current server public network IP Or IP for local testing and Port
 server: 127.0.0.1
-server_port: 1081
+server_port: 1801
 # Discontinuation time after no request
 timeout: 40
+
+local_address: 127.0.0.1
+local_port: 1081
 
 
 # Supported authentication methods                             支持的认证方式 ， 这边服务程序只支持一种验证方式，需要在二者中选择

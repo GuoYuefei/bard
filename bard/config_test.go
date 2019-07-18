@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseConfig(t *testing.T) {
-	config, err := ParseConfig("../debug/config/config.yml")
+	config, err := ParseConfig("../server/debug/config/config.yml")
 	if err != nil {
 		t.Error(err)
 	}
@@ -14,7 +14,7 @@ func TestParseConfig(t *testing.T) {
 }
 
 func TestConfig_Users(t *testing.T) {
-	config, err := ParseConfig("../debug/config/config.yml")
+	config, err := ParseConfig("../server/debug/config/config.yml")
 	if err != nil {
 		t.Error(err)
 	}

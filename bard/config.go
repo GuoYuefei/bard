@@ -62,8 +62,18 @@ func ParseConfig(path string) (config *Config, err error) {
 	if config.Timeout == 0 {
 		config.Timeout = TIMEOUT		// 默认三分钟
 	}
+	if config.LocalAddress == "" {
+		config.LocalAddress = "127.0.0.1"
+	}
+	if config.LocalPort == 0 {
+		config.LocalPort = 1080
+	}
 
 	return
+}
+
+func (c *Config) GetLocalString() string {
+	return c.LocalAddress
 }
 
 func (c *Config) ServerPortString() string {

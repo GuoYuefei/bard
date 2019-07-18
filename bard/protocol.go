@@ -30,7 +30,7 @@ const (
 	IPV6 uint8 = 0X04
 
 )
-
+var ErrorSocksVersion = errors.New("is not socks5")
 var ErrorAuth = errors.New("Authentication failed")
 
 /**
@@ -165,8 +165,48 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 }
 
 
+func ReadPCRspInfo(r *bufio.Reader) (pcrsp *PCRspInfo, e error) {
+	ver, e := r.ReadByte()
+	if e != nil {
+		return
+	}
+	if ver != SocksVersion {
+		e = ErrorSocksVersion
+		return
+	}
+	response , e := r.ReadByte()
+	if e != nil {
+		return
+	}
+	// 成功 不细分错误代码
+	if response != 0x00 {
+		return nil, fmt.Errorf("server reponse code is %x", response)
+	}
+	rsv, e := r.ReadByte() //保留字节
+	if e != nil {
+		return
+	}
+	addr, e := ReadRemoteHost(r)
+	if e != nil {
+		return
+	}
+	pcrsp = &PCRspInfo{
+		Ver: ver,
+		Rep: response,
+		RSV: rsv,
+		Dst: addr,
+	}
+	return pcrsp, e
+}
 
-
+// 请求是的拒绝请求回应
+func RefuseRequest(conn *Conn) {
+	resp := []byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	_, err := conn.Write(resp)
+	if err != nil {
+		Deb.Printf("refuse connect error:\t", err)
+	}
+}
 
 
 

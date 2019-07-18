@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
-	"io"
 	"net"
 	"sync"
 )
@@ -38,86 +36,74 @@ func (c *Message) Write(b []byte) (n int, err error) {
 	return i, err
 }
 
-// todo !!!!! first
+// endtodo !!!!! first
 // LOCAL -> CSM -> REMOTE
 // REMOTE -> SCM -> LOCAL
 // PCQI 有请求的所有信息
 // 如果是udp需要生成Packet类型，应该说要组合Packet之后重写Listen
 type Client struct {
+	config *Config
+
 	LocalConn *Conn
 	CSMessage chan *Message
 
-	PCQI *PCQInfo
-	Addr *Address			//	服务器返回地址，仅udp代理时有用,先不考虑udp
+	PCQI *PCQInfo					// node 这是LocalConn得到的请求 这个内容其实只要原封不动传给远程代理就行
+	// todo 以下addr需要改成PCRspInfo类型
+	PCRsp *PCRspInfo			// node 这是RemoteConn远程服务器发回的响应	服务器返回响应，仅udp代理时有用,先不考虑udp
 
 	SCMessage chan *Message
 	RemoteConn *Conn
 }
 
-func (c *Client)DealLocal() {
-	// Local -> CSM
-	// Local <- SCM
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		for {
-			csmessage := &Message{}
-			_, err := Pipe(csmessage, c.LocalConn, nil)
-			if err != nil && err != io.ErrShortWrite {
-				break
-			}
-			c.CSMessage<-csmessage
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		for {
-			scmessage := <- c.SCMessage
-			_, err := Pipe(c.LocalConn, scmessage, nil)
-			if err != nil && err != io.ErrShortWrite {
-				break
-			}
-		}
-	}()
-
-	wg.Wait()
+func (c *Client)CheckUDP() {
+	// todo 检查是不是udp连接 如果是，就为Client添加udp通道所需要的属性
 }
 
-func (c *Client)DealRemote() {
-	// Remote -> SCM
-	// Remote <- CSM
+func (c *Client)Pipe() {
 	wg := &sync.WaitGroup{}
-	wg.Add(2)
+	e := c.PCQI.Response(c.LocalConn, c.config.GetLocalString())
+	if e != nil {
+		Deb.Println(e)
+		wg.Done(); wg.Done()			// 发生错误还需要解锁的
+		return
+	}
 	go func() {
 		defer wg.Done()
-		for {
-			scmessage := &Message{}
-			_, err := Pipe(scmessage, c.RemoteConn, nil)
-			if err != nil && err != io.ErrShortWrite {
-				break
-			}
-			c.SCMessage <- scmessage
+		// 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
+		written, e := Pipe(c.RemoteConn, c.LocalConn, nil)
+		if e != nil {
+			Deb.Printf("LocalConn -> RemoteConn失败: %v", e)
+		} else {
+			Deb.Printf("LocalConn -> RemoteConn 复制了%dB信息", written)
 		}
-
-	}()
-
-
-	go func() {
-		defer wg.Done()
-		for {
-			csmessage := <- c.CSMessage
-			_, err := Pipe(c.RemoteConn, csmessage, nil)
-			if err != nil && err != io.ErrShortWrite {
-				break
-			}
+		// todo
+		e = c.RemoteConn.Close()
+		if e != nil {
+			Logff(ExceptionTurnOffRemoteTCP.Error()+"%v", LOG_WARNING, e)
 		}
 	}()
 
+	go func() {
+		defer wg.Done()
+		// 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
+		written, e := Pipe(c.LocalConn, c.RemoteConn, nil)
+		if e != nil {
+			Deb.Printf("LocalConn -> RemoteConn失败: %v", e)
+		} else {
+			Deb.Printf("LocalConn -> RemoteConn 复制了%dB信息", written)
+		}
+		// todo
+		e = c.LocalConn.Close()
+		if e != nil {
+			Logff(ExceptionTurnOffRemoteTCP.Error()+"%v", LOG_WARNING, e)
+		}
+	}()
 	wg.Wait()
 
+
 }
+
+
 
 /**
 	定义Client的能力
@@ -134,10 +120,11 @@ func (c *Client)DealRemote() {
 */
 func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config) (c *Client, err error){
 	c = &Client{}
-	remoteConn, addr, err := NewRemoteConn(config, pcqi)
+	remoteConn, pcrsp, err := NewRemoteConn(config, pcqi)
 	if err != nil {
 		return
 	}
+	c.config = config
 	c.RemoteConn = remoteConn
 	c.LocalConn = localConn
 	c.PCQI = pcqi
@@ -146,13 +133,13 @@ func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config) (c *Client, err e
 	c.CSMessage = make(chan *Message, MESSAGESIZE)
 	c.SCMessage = make(chan *Message, MESSAGESIZE)
 
-	c.Addr = addr
+	c.PCRsp = pcrsp
 
 	return
 }
 
 // 这个就是想
-func NewRemoteConn(config *Config, pcqi *PCQInfo) (remoteConn *Conn, addr *Address, err error) {
+func NewRemoteConn(config *Config, pcqi *PCQInfo) (remoteConn *Conn, pcrsp *PCRspInfo, err error) {
 	conn, err := net.Dial("tcp", config.GetServers()[0]+":"+config.ServerPortString())
 	if err != nil {
 		return
@@ -161,26 +148,28 @@ func NewRemoteConn(config *Config, pcqi *PCQInfo) (remoteConn *Conn, addr *Addre
 
 	r := bufio.NewReader(conn)
 
-	addr, err = ClientHandleShakeWithRemote(r, remoteConn, pcqi)
+	pcrsp, err = ClientHandleShakeWithRemote(r, remoteConn, pcqi)
 
 	return
 }
 
 // 与远程代理服务器握手
-func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo) (addr *Address,e error) {
-	errversion := errors.New("is not socks5 server")
+func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo) (pcrsp *PCRspInfo,e error) {
 	conn.Write([]byte{SocksVersion, 0x02, NOAUTH, AuthUserPassword})
 	b, e := r.ReadByte()
 	if e != nil {
 		return
 	}
 	if b != SocksVersion {
-		e = errversion
+		e = ErrorSocksVersion
 		return
 	}
 	method, e := r.ReadByte()
+	if e != nil {
+		return
+	}
 	if method == AuthUserPassword {
-		// 进行密码验证环节
+		// todo 进行密码验证环节
 	} else if method != NOAUTH {
 		// 不是账号密码验证和不需要验证两种方式，就返回错误
 		e = errors.New("server return Auth method error")
@@ -193,27 +182,7 @@ func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo) (ad
 		return
 	}
 
-	b, e = r.ReadByte()
-	if e != nil {
-		return
-	}
-	if b != SocksVersion {
-		e = errversion
-		return
-	}
-	response , e := r.ReadByte()
-	if e != nil {
-		return
-	}
-	// 成功 不细分错误代码
-	if response != 0x00 {
-		return nil, fmt.Errorf("server reponse code is %x", response)
-	}
-	_, e = r.ReadByte() //保留字节
-	if e != nil {
-		return
-	}
-	addr, e = ReadRemoteHost(r)
+	pcrsp, e = ReadPCRspInfo(r)
 
 	return
 }

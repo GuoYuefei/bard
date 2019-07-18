@@ -38,7 +38,7 @@ func (p *PCQInfo) ToBytes() []byte {
 	return append([]byte{p.Ver, p.Cmd, 0x00}, p.Dst.ToProtocol()...)
 }
 
-func (p *PCQInfo) Response(conn *Conn, config *Config) error {
+func (p *PCQInfo) Response(conn *Conn, server string) error {
 	var resp []byte
 	if p.Cmd == REQUEST_TCP {
 		// 请求tcp代理
@@ -48,7 +48,7 @@ func (p *PCQInfo) Response(conn *Conn, config *Config) error {
 	} else if p.Cmd == REQUEST_UDP {
 		// 主要响应socks5最后的请求 cmd 为udp
 		// 服务器端server 一般只有一个ip todo 先别管多IP吧 而且还只支持ipv4
-		var ip = net.ParseIP(config.GetServers()[0])
+		var ip = net.ParseIP(server)
 		// fmt.Println("ip is .............", ip.To4())
 		// 遵照回应udp的写法
 		resp = append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
@@ -84,7 +84,6 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 	if p.Cmd == REQUEST_TCP {
 
 
-
 		remote, e := net.Dial("tcp", p.Dst.String())
 		//remote.SetTimeout(config.Timeout)
 
@@ -97,7 +96,7 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			if err != nil {
 				Deb.Printf("refuse connect error:\t", err)
 			}
-			return
+			return e
 		}
 		defer func() {
 			e = remote.Close()
@@ -106,9 +105,9 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			//}
 		}()
 
-		e = p.Response(conn, config)
+		e = p.Response(conn, config.GetServers()[0])
 		if e != nil {
-			return
+			return e
 		}
 
 		wg := new(sync.WaitGroup)
@@ -173,11 +172,11 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			if err != nil {
 				Deb.Printf("refuse connect error:\t", err)
 			}
-			return
+			return e
 		}
 
 		// 对客户端回应
-		e = p.Response(conn, config)
+		e = p.Response(conn, config.GetServers()[0])
 
 		if e != nil {
 			Deb.Println("pcqi.go response error:", e)
