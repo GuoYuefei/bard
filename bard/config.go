@@ -76,6 +76,10 @@ func (c *Config) GetLocalString() string {
 	return c.LocalAddress
 }
 
+func (c *Config) GetLocalAddr() string {
+	return fmt.Sprintf("%s:%d", c.LocalAddress, c.LocalPort)
+}
+
 func (c *Config) ServerPortString() string {
 	return strconv.Itoa(c.ServerPort)
 }

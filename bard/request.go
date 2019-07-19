@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"net"
+	"strconv"
 	"sync"
 )
 
@@ -45,14 +47,29 @@ type Client struct {
 	config *Config
 
 	LocalConn *Conn
-	CSMessage chan *Message
+	//CSMessage chan *Message
 
 	PCQI *PCQInfo					// node 这是LocalConn得到的请求 这个内容其实只要原封不动传给远程代理就行
 	// todo 以下addr需要改成PCRspInfo类型
 	PCRsp *PCRspInfo			// node 这是RemoteConn远程服务器发回的响应	服务器返回响应，仅udp代理时有用,先不考虑udp
 
-	SCMessage chan *Message
+	//SCMessage chan *Message
 	RemoteConn *Conn
+}
+
+func (c *Client)Close() error {
+	e1 := c.RemoteConn.Close()
+	e2 := c.LocalConn.Close()
+	if e1 != nil && e2 != nil {
+		return fmt.Errorf("RemoteConn Close error: %v,\nLocalConn Close error: %v\n", e1, e2)
+	}
+	if e1 != nil {
+		return fmt.Errorf("RemoteConn Close error: %v\n", e1)
+	}
+	if e2 != nil {
+		return fmt.Errorf("LocalConn Close error: %v\n", e2)
+	}
+	return nil
 }
 
 func (c *Client)CheckUDP() {
@@ -60,16 +77,65 @@ func (c *Client)CheckUDP() {
 }
 
 func (c *Client)Pipe() {
+	if c.PCQI.Cmd == REQUEST_TCP {
+		c.PipeTcp()
+	} else if c.PCQI.Cmd == REQUEST_UDP {
+
+	} else {
+
+	}
+}
+
+func (c *Client)PipeUdp() {
+	// do something with udp channel
+	//remoteUdpAddr, err := net.ResolveUDPAddr("udp", c.PCRsp.SAddr.AddrString())
+	localUdpAddr, err := net.ResolveUDPAddr("udp", c.config.GetLocalString()+":"+
+														strconv.Itoa(c.PCQI.Dst.PortToInt()+2))
+	udpchan := make(chan UdpMessage, MESSAGESIZE)
+	if err != nil {
+		Deb.Println("UDP parse error,", err)
+		return
+	}
+	// node 这个udpPacket是客户端处理一个udp连接时的唯一通道，包括与客户端的客户端通讯和客户端的服务器端
+	localPacket, err := net.ListenUDP("udp", localUdpAddr)
+	if err != nil {
+		Deb.Println(err)
+		RefuseRequest(c.LocalConn)
+		return
+	}
+	err = c.PCQI.Response(c.LocalConn, c.config.GetLocalString())
+	if err != nil {
+		Deb.Println(err)
+		//RefuseRequest(c.LocalConn)			// 没回复成功成功，不知要不要回复失败，因为可能回复失败也失败
+		return
+	}
+
+	packet, e := NewPacket(c.LocalConn, localPacket, c.PCQI.Dst.PortToInt())
+
+	// udp 监听一套 todo 由udpconn文件中Packet完成工作
+	go func() {
+
+	}()
+
+	// udp发送一套
+
+
+
+
+}
+
+func (c *Client)PipeTcp() {
 	wg := &sync.WaitGroup{}
+	wg.Add(2)
 	e := c.PCQI.Response(c.LocalConn, c.config.GetLocalString())
 	if e != nil {
 		Deb.Println(e)
+		c.Close()
 		wg.Done(); wg.Done()			// 发生错误还需要解锁的
 		return
 	}
 	go func() {
 		defer wg.Done()
-		// 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
 		written, e := Pipe(c.RemoteConn, c.LocalConn, nil)
 		if e != nil {
 			Deb.Printf("LocalConn -> RemoteConn失败: %v", e)
@@ -85,7 +151,6 @@ func (c *Client)Pipe() {
 
 	go func() {
 		defer wg.Done()
-		// 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
 		written, e := Pipe(c.LocalConn, c.RemoteConn, nil)
 		if e != nil {
 			Deb.Printf("LocalConn -> RemoteConn失败: %v", e)
@@ -130,8 +195,8 @@ func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config) (c *Client, err e
 	c.PCQI = pcqi
 
 	// 和udp通道不同，udp通道两个出口或入口都是相同协议的。 这边是双协议所以需要两个通道
-	c.CSMessage = make(chan *Message, MESSAGESIZE)
-	c.SCMessage = make(chan *Message, MESSAGESIZE)
+	//c.CSMessage = make(chan *Message, MESSAGESIZE)
+	//c.SCMessage = make(chan *Message, MESSAGESIZE)
 
 	c.PCRsp = pcrsp
 

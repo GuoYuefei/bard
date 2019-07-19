@@ -23,7 +23,7 @@ type UDPReqS struct {
 
 // ip:port 域名全部dns成ip
 func (u *UDPReqS) String() string {
-	if u.Dst.Atyp != 0x003 {
+	if u.Dst.Atyp != 0x03 {
 		return u.Dst.String()
 	}
 

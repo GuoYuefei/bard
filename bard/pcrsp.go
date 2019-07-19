@@ -6,7 +6,7 @@ type PCRspInfo struct {
 	Ver byte
 	Rep byte
 	RSV byte
-	Dst *Address
+	SAddr *Address			//cmd=0x03时为服务器端udp的监听地址， cmd=0x01时
 }
 
 // 方法？？？

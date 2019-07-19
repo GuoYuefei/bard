@@ -213,7 +213,9 @@ func (p *Packet) Listen() error {
 }
 
 
+func (p *Packet) SetServers(key string, server) {
 
+}
 
 func (p *Packet) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	n, addr, err = p.Packet.ReadFrom(b)

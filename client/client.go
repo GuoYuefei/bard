@@ -36,7 +36,7 @@ func socksSever() {
 			continue
 		}
 
-		conn := bard.NewConnTimeout(netconn,  config.Timeout)
+		conn := bard.NewConnTimeout(netconn, config.Timeout)
 		go localServerHandleConn(conn, config)
 
 	}
@@ -58,7 +58,7 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config) {
 	// 握手可以复用 包括Auth过程
 	err := bard.ServerHandShake(r, localConn, config)
 
-	if err != nil {			// 认证失败也会返回错误哦
+	if err != nil { // 认证失败也会返回错误哦
 		return
 	}
 
@@ -75,8 +75,12 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config) {
 	// todo 请求成功的回复由远程服务器端给结果 由本地服务器修改部分内容发送  这个部分的回复应该由client的DealLocalConn负责
 
 	client, err := bard.NewClient(localConn, pcq, config)
-	if err != nil {
-		bard.Deb.Println(err)
+	if err != nil || client.PCRsp.Rep != 0x00 {
+		if err != nil {
+			bard.Deb.Println(err)
+		} else {
+			bard.Deb.Println("refused by remote server")
+		}
 		bard.RefuseRequest(localConn)
 		return
 	}
@@ -85,13 +89,6 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config) {
 	client.Pipe()
 
 }
-
-
-
-
-
-
-
 
 func doConfig() (config *bard.Config) {
 	config, err := bard.ParseConfig(ConfigPath)
@@ -106,9 +103,6 @@ func doConfig() (config *bard.Config) {
 
 	return
 }
-
-
-
 
 // client easy example
 func fun() {
@@ -125,7 +119,7 @@ func fun() {
 	if b == bard.SocksVersion {
 		if b, err = r.ReadByte(); err != nil {
 			return
-		}else {
+		} else {
 			if b == 0xff {
 				return
 			}
@@ -145,7 +139,7 @@ func fun() {
 		return
 	}
 	r.Reset(conn)
-	_, err = conn.Write([]byte("GET / HTTP/1.1\r\nHost: example.com\r\nUser-Agent: Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.7.6)\r\n"+
+	_, err = conn.Write([]byte("GET / HTTP/1.1\r\nHost: example.com\r\nUser-Agent: Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.7.6)\r\n" +
 		"Gecko/20050225 Firefox/1.0.1\r\nConnection: Keep-Alive\r\n\r\n"))
 	if err != nil {
 		bard.Deb.Println(err)

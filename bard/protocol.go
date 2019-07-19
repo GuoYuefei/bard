@@ -164,7 +164,7 @@ func ReadPCQInfo(r *bufio.Reader) (*PCQInfo, error) {
 	return &PCQInfo{version, cmd,0x00,rsv, address}, nil
 }
 
-
+// 记录服务器端的相应请求的信息
 func ReadPCRspInfo(r *bufio.Reader) (pcrsp *PCRspInfo, e error) {
 	ver, e := r.ReadByte()
 	if e != nil {
@@ -194,7 +194,7 @@ func ReadPCRspInfo(r *bufio.Reader) (pcrsp *PCRspInfo, e error) {
 		Ver: ver,
 		Rep: response,
 		RSV: rsv,
-		Dst: addr,
+		SAddr: addr,
 	}
 	return pcrsp, e
 }
