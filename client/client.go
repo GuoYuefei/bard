@@ -73,7 +73,7 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugin bar
 		bard.RefuseRequest(localConn)
 		return
 	}
-	bard.Deb.Printf("得到的完整的地址是：%s", pcq)
+	bard.Deb.Printf("客户端得到的完整的地址是：%s", pcq)
 
 	// todo 请求成功的回复由远程服务器端给结果 由本地服务器修改部分内容发送  这个部分的回复应该由client的DealLocalConn负责
 
@@ -87,6 +87,7 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugin bar
 		bard.RefuseRequest(localConn)
 		return
 	}
+
 	// todo udp通道部分应该是由哪里负责？  			给client负责
 
 	client.Pipe()

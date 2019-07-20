@@ -2,6 +2,7 @@ package bard
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"plugin"
@@ -36,8 +37,9 @@ type IPlugin interface {
 	// node EndCam 废弃
 	// todo 每个函数都有两个状态，一个是接收时怎么做一个是发送时怎么做
 	// todo 所以函数签名还是要改
+
 	// 其中为了实现Camouflage还需要一个函数，表示混淆协议的结束符号
-	// 优先级最高的
+	// !!!! 函数废弃，正好做保留字段
 	EndCam() byte
 
 	// 下面三函数的bool都表示是否是send消息，是执行send消息处理部分，否就执行get消息之后处理部分
@@ -47,9 +49,8 @@ type IPlugin interface {
 	// node 注意 我这边一直强调是引用，而非内容
 
 	// 伪装、混淆， 在socks5协议之前伪装协议头
-	// 也就是在socks5之前加一个啥协议什么的    ps。这里的形参看起来没啥用，我刚开始设计也只是为了统一三个函数的类型
+	// 也就是在socks5之前加一个啥协议什么的
 	// 仅在socks5握手时有用
-	// 这里的bool无用， 解开混淆只用EndCam.
 	Camouflage([]byte, Send) ([]byte, int)
 
 	// 防嗅探，
@@ -63,9 +64,9 @@ type IPlugin interface {
 
 	// 优先级，越是优先越后运行	0是最高优先级
 	// !!! 一个重要的解释：前面三位是保留位
-	// 当八位0001,xxxx,xxxx,xxxx这样格式的，为在socks5协议之前的混淆协议，这时启用Camouflage函数，
-	// 当八位0010,xxxx,xxxx,xxxx格式的，为加密或操作socks协议本身，这个主要防止在建立socks5连接阶段被嗅探,启用AntiSniffing
-	// 当八位0100,xxxx,xxxx,xxxx格式的，为加密或操作传输内容的 启用Ornament函数
+	// 当十六位0001,xxxx,xxxx,xxxx这样格式的，为在socks5协议之前的混淆协议，这时启用Camouflage函数，
+	// 当十六位0010,xxxx,xxxx,xxxx格式的，为加密或操作socks协议本身，这个主要防止在建立socks5连接阶段被嗅探,启用AntiSniffing
+	// 当十六位0100,xxxx,xxxx,xxxx格式的，为加密或操作传输内容的 启用Ornament函数
 	// 每四位表示对应函数的优先级001->最右四位，以此类推
 	// 优先级相同时会随机在前在后 这不利于客户端解码 所以请各个插件各自权衡好优先级,也可以配置文件形式给出留给用户设定
 	Priority() uint16
@@ -292,6 +293,7 @@ func PluginsFromDir(pluginDir string) (ps *Plugins, e error) {
 		// 这时拿到插件要告诉我们的信息了
 		if IP, ok := symbol.(IPlugin); ok {
 			ps.Register(IP)
+			fmt.Printf("load plugin %s\n", name)
 			continue
 		} else {
 			Logff("Filename: %s, Failed to register plugin", LOG_WARNING, name)

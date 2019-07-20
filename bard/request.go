@@ -163,9 +163,9 @@ func (c *Client)PipeTcp() {
 		defer wg.Done()
 		written, e := Pipe(c.LocalConn, c.RemoteConn, dealOrnament(RECEIVE, c.RemoteConn.Plugin()))
 		if e != nil {
-			Deb.Printf("LocalConn -> RemoteConn失败: %v", e)
+			Deb.Printf("RemoteConn -> LocalConn失败: %v", e)
 		} else {
-			Deb.Printf("LocalConn -> RemoteConn 复制了%dB信息", written)
+			Deb.Printf("RemoteConn -> LocalConn 复制了%dB信息", written)
 		}
 		// todo
 		e = c.LocalConn.Close()
@@ -195,10 +195,8 @@ func (c *Client)PipeTcp() {
 */
 func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config, plugin IPlugin) (c *Client, err error){
 	c = &Client{}
-	remoteConn, pcrsp, err := NewRemoteConn(config, pcqi)
-	if plugin != nil {
-		remoteConn.Register(plugin)
-	}
+	remoteConn, pcrsp, err := NewRemoteConn(config, pcqi, plugin)
+
 	if err != nil {
 		return
 	}
@@ -217,14 +215,18 @@ func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config, plugin IPlugin) (
 }
 
 // 这个就是想
-func NewRemoteConn(config *Config, pcqi *PCQInfo) (remoteConn *Conn, pcrsp *PCRspInfo, err error) {
+func NewRemoteConn(config *Config, pcqi *PCQInfo, plugin IPlugin) (remoteConn *Conn, pcrsp *PCRspInfo, err error) {
 	conn, err := net.Dial("tcp", config.GetServers()[0]+":"+config.ServerPortString())
 	if err != nil {
 		return
 	}
-	remoteConn = NewConnTimeout(conn, config.Timeout)
 
-	r := bufio.NewReader(conn)
+	remoteConn = NewConnTimeout(conn, config.Timeout)
+	if plugin != nil {
+		remoteConn.Register(plugin)
+	}
+
+	r := bufio.NewReader(remoteConn)
 
 	pcrsp, err = ClientHandleShakeWithRemote(r, remoteConn, pcqi)
 
@@ -234,18 +236,22 @@ func NewRemoteConn(config *Config, pcqi *PCQInfo) (remoteConn *Conn, pcrsp *PCRs
 // 与远程代理服务器握手
 func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo) (pcrsp *PCRspInfo,e error) {
 	conn.Write([]byte{SocksVersion, 0x02, NOAUTH, AuthUserPassword})
+
 	b, e := r.ReadByte()
 	if e != nil {
 		return
 	}
+
 	if b != SocksVersion {
 		e = ErrorSocksVersion
+		Deb.Println("version byte is", b)
 		return
 	}
 	method, e := r.ReadByte()
 	if e != nil {
 		return
 	}
+
 	if method == AuthUserPassword {
 		// todo 进行密码验证环节
 	} else if method != NOAUTH {

@@ -60,6 +60,8 @@ func (c *Conn) SetDeadline(t time.Time) error {
 
 func (c *Conn) Write(b []byte) (n int, err error) {
 	var resp []byte = b
+	var addlen = 0
+	blen := len(b)
 	p := c.plugin
 	if p == nil {
 		goto Write
@@ -67,12 +69,15 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 
 	// 处理tcp负载数据内容
 	resp, n = p.AntiSniffing(resp, SEND)
+	addlen = n - blen
 
 	// 处理添加混淆内容
 	resp, n = p.Camouflage(resp, SEND)
+	addlen = n - blen
 
 Write:
 	n, err = c.Conn.Write(resp)
+	n = n - addlen			// 减去增加的内容才是真实的内容   // node
 	_ = c.SetDeadline(c.GetDeadline())
 	return
 }
