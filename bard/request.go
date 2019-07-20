@@ -2,7 +2,6 @@ package bard
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -12,33 +11,6 @@ import (
 
 // 客户端的大部分内容 请求过程
 
-//// client -> server传的message
-//type CToSMessage struct {
-//	*Message
-//	ProxyRequest []byte			// 其实就是将本地服务器接受到的请求原封不动的记录下来			至于在请求之前的过程---验证，其实同一客户端下都是相同的
-//
-//}
-
-// 基础的Message结构体
-type Message struct {
-	Data []byte
-}
-
-// 不知道对不对还未验证
-func (c *Message) Read(b []byte) (n int, err error) {
-	return bytes.NewReader(c.Data).Read(b)
-}
-
-func (c *Message) Write(b []byte) (n int, err error) {
-	write := new(bytes.Buffer)
-	// todo 可能有错
-	i, err := write.Write(b)
-	c.Data = write.Bytes()
-
-	return i, err
-}
-
-// endtodo !!!!! first
 // LOCAL -> CSM -> REMOTE
 // REMOTE -> SCM -> LOCAL
 // PCQI 有请求的所有信息
@@ -72,17 +44,14 @@ func (c *Client)Close() error {
 	return nil
 }
 
-func (c *Client)CheckUDP() {
-	// todo 检查是不是udp连接 如果是，就为Client添加udp通道所需要的属性
-}
-
 func (c *Client)Pipe() {
 	if c.PCQI.Cmd == REQUEST_TCP {
 		c.PipeTcp()
 	} else if c.PCQI.Cmd == REQUEST_UDP {
-
+		c.PipeUdp()
 	} else {
-
+		// 前期就已经检查，不会出现这种情况
+		return
 	}
 }
 
@@ -91,7 +60,6 @@ func (c *Client)PipeUdp() {
 	//remoteUdpAddr, err := net.ResolveUDPAddr("udp", c.PCRsp.SAddr.AddrString())
 	localUdpAddr, err := net.ResolveUDPAddr("udp", c.config.GetLocalString()+":"+
 														strconv.Itoa(c.PCQI.Dst.PortToInt()+2))
-	udpchan := make(chan UdpMessage, MESSAGESIZE)
 	if err != nil {
 		Deb.Println("UDP parse error,", err)
 		return
@@ -104,24 +72,66 @@ func (c *Client)PipeUdp() {
 		return
 	}
 	err = c.PCQI.Response(c.LocalConn, c.config.GetLocalString())
+
 	if err != nil {
 		Deb.Println(err)
 		//RefuseRequest(c.LocalConn)			// 没回复成功成功，不知要不要回复失败，因为可能回复失败也失败
 		return
 	}
 
-	packet, e := NewPacket(c.LocalConn, localPacket, c.PCQI.Dst.PortToInt())
+	// c.RemoteConn 主要是把含有plugin的一个连接传入 此时Packet类型中的client就是远程代理服务器的监听地址了。 因为udp交流是双方是平等的，也可以将远程服务器理解成本udp连接的客户端
+	packet, e := NewPacket(/*c.LocalConn*/c.RemoteConn, localPacket, c.PCRsp.SAddr.PortToInt())
+	if e != nil {
+		return
+	}
+	packet.SetTimeout(c.config.Timeout)
+	if addr, ok := c.LocalConn.RemoteAddr().(*net.TCPAddr); ok {
+		udpAddr, err := net.ResolveUDPAddr("udp", addr.IP.String()+":"+strconv.Itoa(c.PCQI.Dst.PortToInt()))
+		if err != nil {
+			return
+		}
+		packet.AddServer("local", udpAddr)
+	} else {
+		Deb.Println("c.LocalConn.RemoteAddr() is not a TCPAddr")
+	}
+	wg := new(sync.WaitGroup)
+	wg. Add(2)
 
-	// udp 监听一套 todo 由udpconn文件中Packet完成工作
 	go func() {
-
+		defer wg.Done()
+		for {
+			err := c.LocalConn.SetDeadline(c.LocalConn.GetDeadline()) //维持下本地的socks5连接
+			if err != nil {
+				Deb.Println("Local socks5 protocol setting timeout error, may have been disconnected")
+				break
+			}
+			err = packet.ListenToFixedTarget("local")
+			if err != nil {
+				// 记录到日志 可能以后会出现其他错误 如果只是udp关闭的话就是正确的逻辑
+				Slog.Println("packet.listen close:", err)
+				close(packet.message)
+				break
+			}
+		}
 	}()
 
-	// udp发送一套
+	go func() {
+		defer wg.Done()
+		for {
+			err := c.LocalConn.SetDeadline(c.LocalConn.GetDeadline()) //维持下本地的socks5连接
+			if err != nil {
+				Deb.Println("Local socks5 protocol setting timeout error, may have been disconnected")
+				break
+			}
+			_, err = packet.Request()
+			if err != nil {
+				Slog.Println("packet.request close:", err)
+				break
+			}
+		}
+	}()
 
-
-
-
+	wg.Wait()
 }
 
 func (c *Client)PipeTcp() {
@@ -136,7 +146,7 @@ func (c *Client)PipeTcp() {
 	}
 	go func() {
 		defer wg.Done()
-		written, e := Pipe(c.RemoteConn, c.LocalConn, nil)
+		written, e := Pipe(c.RemoteConn, c.LocalConn, dealOrnament(SEND, c.RemoteConn.Plugin()))
 		if e != nil {
 			Deb.Printf("LocalConn -> RemoteConn失败: %v", e)
 		} else {
@@ -151,7 +161,7 @@ func (c *Client)PipeTcp() {
 
 	go func() {
 		defer wg.Done()
-		written, e := Pipe(c.LocalConn, c.RemoteConn, nil)
+		written, e := Pipe(c.LocalConn, c.RemoteConn, dealOrnament(RECEIVE, c.RemoteConn.Plugin()))
 		if e != nil {
 			Deb.Printf("LocalConn -> RemoteConn失败: %v", e)
 		} else {
@@ -183,9 +193,12 @@ func (c *Client)PipeTcp() {
 	@param pcqi 是localConn接收到的请求信息
 	@param config 配置文件信息
 */
-func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config) (c *Client, err error){
+func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config, plugin IPlugin) (c *Client, err error){
 	c = &Client{}
 	remoteConn, pcrsp, err := NewRemoteConn(config, pcqi)
+	if plugin != nil {
+		remoteConn.Register(plugin)
+	}
 	if err != nil {
 		return
 	}

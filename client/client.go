@@ -10,16 +10,19 @@ import (
 
 const (
 	ConfigPath = "./client/debug/config/config.yml"
+	PluginDir = "./client/debug/plugins"
 )
 
 func main() {
-	socksSever()
+	config := doConfig()
+	plugin := doPlugin()
+
+	socksSever(config, plugin)
 
 }
 
 // socks5协议接受消息，但是不进行转发，而是交由另个协程发给我们自己的远程代理主机
-func socksSever() {
-	config := doConfig()
+func socksSever(config *bard.Config, plugin bard.IPlugin) {
 	listener, err := net.Listen("tcp", ":"+config.LocalPortString())
 	if err != nil {
 		//log.Fatalln(err)
@@ -37,13 +40,13 @@ func socksSever() {
 		}
 
 		conn := bard.NewConnTimeout(netconn, config.Timeout)
-		go localServerHandleConn(conn, config)
+		go localServerHandleConn(conn, config, plugin)
 
 	}
 }
 
 // 设定的时候权限认证只保留不认证一种方式
-func localServerHandleConn(localConn *bard.Conn, config *bard.Config) {
+func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugin bard.IPlugin) {
 	defer func() {
 		err := localConn.Close()
 		// timeout 可能会应发错误，原因此时conn已关闭
@@ -74,7 +77,7 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config) {
 
 	// todo 请求成功的回复由远程服务器端给结果 由本地服务器修改部分内容发送  这个部分的回复应该由client的DealLocalConn负责
 
-	client, err := bard.NewClient(localConn, pcq, config)
+	client, err := bard.NewClient(localConn, pcq, config, plugin)
 	if err != nil || client.PCRsp.Rep != 0x00 {
 		if err != nil {
 			bard.Deb.Println(err)
@@ -88,6 +91,16 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config) {
 
 	client.Pipe()
 
+}
+
+func doPlugin() bard.IPlugin {
+	ps, err := bard.PluginsFromDir(PluginDir)
+	if err != nil {
+		// 上面函数已有错误处理
+		return nil
+	}
+	plugin := ps.ToBigIPlugin()
+	return plugin
 }
 
 func doConfig() (config *bard.Config) {
