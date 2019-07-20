@@ -19,8 +19,7 @@ go get -u install github.com/GuoYuefei/bard
 Now that you have do something it's time to build your application:
 
 ```go
-go install all-package
-go build server.go
+go mod tidy && go build server.go
 ```
 
 Then you can see the executable file named server in your current folder.
@@ -36,7 +35,8 @@ At this time you can execute the program you just compiled.
 ```go
 ./server 
 ```
-
+The latest plugin system allows you to place the plugins you need to open in the debug/plugin/ directory.  
+However, since the client is not encoded, the plug-in system of the server is temporarily unavailable. 
 ## License
 
 GNU AFFERO GENERAL PUBLIC LICENSE (AGPLv3.0)
