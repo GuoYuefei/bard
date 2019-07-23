@@ -47,16 +47,16 @@ func socksSever(config *bard.Config, plugin bard.IPlugin) {
 
 // 设定的时候权限认证只保留不认证一种方式
 func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugin bard.IPlugin) {
-	defer func() {
-		err := localConn.Close()
-		// timeout 可能会应发错误，原因此时conn已关闭
-		if err != nil {
-			bard.Logff("Close socks5 connection error, the error is %v", bard.LOG_WARNING, err)
-		}
-	}()
+	//defer func() {
+	//	err := localConn.Close()
+	//	// timeout 可能会应发错误，原因此时conn已关闭
+	//	if err != nil {
+	//		bard.Logff("Close socks5 connection error, the error is %v", bard.LOG_WARNING, err)
+	//	}
+	//}()
 
 	// 默认是4k，调高到6k
-	r := bufio.NewReaderSize(localConn, 6*1024)
+	r := bufio.NewReaderSize(localConn, bard.BUFSIZE)
 
 	// 握手可以复用 包括Auth过程
 	err := bard.ServerHandShake(r, localConn, config)

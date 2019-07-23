@@ -64,7 +64,7 @@ func (p *PCQInfo) Response(conn *Conn, server string) error {
 
 
 func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
-	r := bufio.NewReaderSize(conn, 6*1024)
+	r := bufio.NewReaderSize(conn, BUFSIZE)
 
 	if p.Cmd == REQUEST_TCP {
 

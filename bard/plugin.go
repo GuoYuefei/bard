@@ -16,8 +16,10 @@ import (
 // !!!强制规定，所有插件都必须以V作为Symbol Name暴露出来
 const (
 	SYMBOL_NAME = "V"
-	END_FLAG = 0xff				// 默认bigplugin的EndCam返回内容。表示不作处理
 )
+
+var END_FLAG = []byte{0xff}				// 默认bigplugin的EndCam返回内容。表示不作处理
+
 
 const (
 	SEND = true
@@ -40,7 +42,7 @@ type IPlugin interface {
 
 	// 其中为了实现Camouflage还需要一个函数，表示混淆协议的结束符号
 	// !!!! 函数废弃，正好做保留字段
-	EndCam() byte
+	EndCam() []byte
 
 	// 下面三函数的bool都表示是否是send消息，是执行send消息处理部分，否就执行get消息之后处理部分
 	// node 注意 三个函数 在Send为false的情况下都不应该改变[]byte参数的引用，否则将不起作用. send=false此时返回值[]byte应该和传入形参的引用相同 return原实参引用
@@ -50,7 +52,7 @@ type IPlugin interface {
 
 	// 伪装、混淆， 在socks5协议之前伪装协议头
 	// 也就是在socks5之前加一个啥协议什么的
-	// 仅在socks5握手时有用
+	// 仅在socks5握手时有用 在接收时第一个返回数据为各分块的长度，一个长度占两字节，大端存取
 	Camouflage([]byte, Send) ([]byte, int)
 
 	// 防嗅探，
@@ -125,7 +127,7 @@ func (s sortPriFuns) Less(i, j int) bool {
 
 // 根据优先级排序
 // 返回的是三个函数根据优先级排好序的函数数组
-func (p *Plugins)SortPriority() (EC func() byte,Cs []IPluFun, As []IPluFun, Os []IPluFun){
+func (p *Plugins)SortPriority() (EC func() []byte,Cs []IPluFun, As []IPluFun, Os []IPluFun){
 
 	var Cfuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
 	var Afuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
@@ -166,8 +168,8 @@ func (p *Plugins)SortPriority() (EC func() byte,Cs []IPluFun, As []IPluFun, Os [
 		// 如果存在可用的伪装函数，那么EndCam可用
 		EC = p.Pmap[Cfuns[len(Cfuns)-1].id].EndCam
 	} else {
-		EC = func() byte {
-			// ascii只用7位，这个没被用 协议内容只可能是ascii信息
+		// 如果伪装函数不存在，就返回一个不是标记的标记
+		EC = func() []byte {
 			return END_FLAG
 		}
 	}
@@ -177,7 +179,7 @@ func (p *Plugins)SortPriority() (EC func() byte,Cs []IPluFun, As []IPluFun, Os [
 }
 
 // 最后返回根据是否生效，以及各插件指定函数的优先级分别返回三个总函数
-func (p *Plugins)GetCAO() (EC func() byte, C IPluFun, A IPluFun, O IPluFun) {
+func (p *Plugins)GetCAO() (EC func() []byte, C IPluFun, A IPluFun, O IPluFun) {
 	EC, Cs, As, Os := p.SortPriority()
 
 	var genCAO = func(ss []IPluFun) (s IPluFun) {
@@ -199,13 +201,13 @@ func (p *Plugins)GetCAO() (EC func() byte, C IPluFun, A IPluFun, O IPluFun) {
 }
 
 type bigIPlugin struct {
-	EC func() byte
+	EC func() []byte
 	C IPluFun
 	A IPluFun
 	O IPluFun
 }
 
-func (b *bigIPlugin)EndCam() byte {
+func (b *bigIPlugin)EndCam() []byte {
 	return b.EC()
 }
 

@@ -200,7 +200,7 @@ func ReadPCRspInfo(r *bufio.Reader) (pcrsp *PCRspInfo, e error) {
 }
 
 // 请求是的拒绝请求回应
-func RefuseRequest(conn *Conn) {
+func RefuseRequest(conn net.Conn) {
 	resp := []byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 	_, err := conn.Write(resp)
 	if err != nil {

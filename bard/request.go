@@ -45,6 +45,7 @@ func (c *Client)Close() error {
 }
 
 func (c *Client)Pipe() {
+	defer c.LocalConn.Close()
 	if c.PCQI.Cmd == REQUEST_TCP {
 		c.PipeTcp()
 	} else if c.PCQI.Cmd == REQUEST_UDP {
@@ -135,7 +136,7 @@ func (c *Client)PipeUdp() {
 }
 
 func (c *Client)PipeTcp() {
-	wg := &sync.WaitGroup{}
+	wg := new(sync.WaitGroup)
 	wg.Add(2)
 	e := c.PCQI.Response(c.LocalConn, c.config.GetLocalString())
 	if e != nil {
@@ -168,10 +169,10 @@ func (c *Client)PipeTcp() {
 			Deb.Printf("RemoteConn -> LocalConn 复制了%dB信息", written)
 		}
 		// todo
-		e = c.LocalConn.Close()
-		if e != nil {
-			Logff(ExceptionTurnOffRemoteTCP.Error()+"%v", LOG_WARNING, e)
-		}
+		//e = c.LocalConn.Close()
+		//if e != nil {
+		//	Logff(ExceptionTurnOffRemoteTCP.Error()+"%v", LOG_WARNING, e)
+		//}
 	}()
 	wg.Wait()
 

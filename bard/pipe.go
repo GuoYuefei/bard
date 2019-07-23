@@ -36,6 +36,9 @@ func PipeBuffer(dst io.Writer, src io.Reader, buf []byte, ornament FunOrnament) 
 		buf = make([]byte, size)
 	}
 	for {
+		//var i int = 1
+		//fmt.Println(i)
+		//i++
 		nr, er := src.Read(buf)
 		//fmt.Println(nr)
 		// 数据处理

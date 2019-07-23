@@ -1,6 +1,8 @@
 package bard
 
 import (
+	"bytes"
+	"fmt"
 	"net"
 	"time"
 )
@@ -93,19 +95,42 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	if c.plugin == nil {
 		return
 	}
+	fmt.Println("收到：\t"+string(b[0:n]))
 
 	//fmt.Println("111111    ", n)
 	p := c.plugin
-	// todo 可能b会存在太小而无法容下处理后的数据  所以这里不考虑压缩算法
 	// 处理摘除混淆
 	_, n = p.Camouflage(b[0:n], RECEIVE)
 
+	fmt.Println("-------收到c：\t"+string(b[0:n]))
 	//fmt.Println("-----1-------",n)
 
 	// 处理tcp上的数据负载
 	_, n = p.AntiSniffing(b[0:n], RECEIVE)
+	//fmt.Println("-------收到ca：\t"+string(b[0:n]))
 	// 可能会出现len(b) > n的情况，具体看插件实现
 	//fmt.Println("----2-----",n)
 	return
 }
 
+// FIXME first
+
+// 读取时需要还原原发送块
+func getWriterBlock(conn net.Conn, sp []byte) []byte {
+	source := make([]byte, len(sp))
+	conn.Read(source)
+	for {
+		if bytes.Index(source, sp) > -1 {
+			break
+		}
+		source = ReadByteAppend(conn, source)
+	}
+	return source
+}
+
+func ReadByteAppend(conn net.Conn, source []byte) []byte {
+	temp := make([]byte, 1)
+	conn.Read(temp)
+	bs := append(source, temp...)
+	return bs
+}
