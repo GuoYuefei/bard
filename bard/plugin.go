@@ -185,7 +185,7 @@ func (p *Plugins)GetCAO() (EC func() []byte, C IPluFun, A IPluFun, O IPluFun) {
 	var genCAO = func(ss []IPluFun) (s IPluFun) {
 		s = func(in []byte, send bool) (out []byte, l int) {
 			out = in
-			l = len(out)
+			l = len(in)
 			for _, v := range ss {
 				out, l = v(out, send)
 			}

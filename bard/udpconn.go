@@ -13,6 +13,8 @@ import (
 const (
 	BUFSIZE     = 32 * 1024
 	MESSAGESIZE = 10
+	WriteBUFSIZE = 32 * 1024
+	ReadBUFSIZE = 36 * 1024
 )
 
 var ErrorChanelClose = errors.New("chanel is closed")

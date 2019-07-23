@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"runtime"
 	"time"
 )
 
@@ -85,31 +86,49 @@ Write:
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
+	// 如果没插件那就正常读取
+	if c.plugin == nil {
+		n, err = c.Conn.Read(b)
+		_ = c.SetDeadline(c.GetDeadline())
+		return
+	}
+
+
 	// 切片是引用类型 如果在函数内重新赋值（引用本身赋值），那么函数外无改变
 	// 为了能够实现net.Conn接口 这里处理负载内容只能是压缩算法
 
-	//var req []byte
-	n, err = c.Conn.Read(b)
-	_ = c.SetDeadline(c.GetDeadline())
-
-	if c.plugin == nil {
-		return
-	}
-	fmt.Println("收到：\t"+string(b[0:n]))
-
-	//fmt.Println("111111    ", n)
 	p := c.plugin
 	// 处理摘除混淆
-	_, n = p.Camouflage(b[0:n], RECEIVE)
+	sep := p.EndCam()
+	temp := getWriterBlock(c.Conn, sep)
 
-	fmt.Println("-------收到c：\t"+string(b[0:n]))
+	//fmt.Printf("混淆报头%d：%s\n", len(temp), temp)
+	_, n = p.Camouflage(temp, RECEIVE)
+	fmt.Println("数据块大小：", n)
+
+	nr, err := c.Conn.Read(b[:n])
+	for nr != n {
+		// 如果数据还没完全到达   先让本协程让出时间片 等待一会再读取
+		runtime.Gosched()
+		i, err := c.Conn.Read(b[nr:n])
+
+		if err != nil {
+			return  nr, err
+		}
+		nr += i
+	}
+
+	//fmt.Println(nr)
+	_ = c.SetDeadline(c.GetDeadline())
+
+	//fmt.Println("get c:")
+	//fmt.Printf("%s\n", b[:n])
 	//fmt.Println("-----1-------",n)
 
 	// 处理tcp上的数据负载
 	_, n = p.AntiSniffing(b[0:n], RECEIVE)
 	//fmt.Println("-------收到ca：\t"+string(b[0:n]))
-	// 可能会出现len(b) > n的情况，具体看插件实现
-	//fmt.Println("----2-----",n)
+
 	return
 }
 
@@ -117,7 +136,8 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 
 // 读取时需要还原原发送块
 func getWriterBlock(conn net.Conn, sp []byte) []byte {
-	source := make([]byte, len(sp))
+	// s 77 c 56 todo 解决这里的效率问题
+	source := make([]byte, 56*len(sp))
 	conn.Read(source)
 	for {
 		if bytes.Index(source, sp) > -1 {
@@ -125,6 +145,11 @@ func getWriterBlock(conn net.Conn, sp []byte) []byte {
 		}
 		source = ReadByteAppend(conn, source)
 	}
+	// 此时得到的是混淆的头部，还需要根绝头部读取
+
+
+
+
 	return source
 }
 
