@@ -2,6 +2,7 @@ package bard
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"plugin"
@@ -15,8 +16,10 @@ import (
 // !!!强制规定，所有插件都必须以V作为Symbol Name暴露出来
 const (
 	SYMBOL_NAME = "V"
-	END_FLAG = 0xff				// 默认bigplugin的EndCam返回内容。表示不作处理
 )
+
+var END_FLAG = []byte{0xff}				// 默认bigplugin的EndCam返回内容。表示不作处理
+
 
 const (
 	SEND = true
@@ -36,9 +39,10 @@ type IPlugin interface {
 	// node EndCam 废弃
 	// todo 每个函数都有两个状态，一个是接收时怎么做一个是发送时怎么做
 	// todo 所以函数签名还是要改
+
 	// 其中为了实现Camouflage还需要一个函数，表示混淆协议的结束符号
-	// 优先级最高的
-	EndCam() byte
+	// !!!! 函数废弃，正好做保留字段
+	EndCam() []byte
 
 	// 下面三函数的bool都表示是否是send消息，是执行send消息处理部分，否就执行get消息之后处理部分
 	// node 注意 三个函数 在Send为false的情况下都不应该改变[]byte参数的引用，否则将不起作用. send=false此时返回值[]byte应该和传入形参的引用相同 return原实参引用
@@ -47,9 +51,8 @@ type IPlugin interface {
 	// node 注意 我这边一直强调是引用，而非内容
 
 	// 伪装、混淆， 在socks5协议之前伪装协议头
-	// 也就是在socks5之前加一个啥协议什么的    ps。这里的形参看起来没啥用，我刚开始设计也只是为了统一三个函数的类型
-	// 仅在socks5握手时有用
-	// 这里的bool无用， 解开混淆只用EndCam.
+	// 也就是在socks5之前加一个啥协议什么的
+	// 仅在socks5握手时有用 在接收时第一个返回数据为各分块的长度，一个长度占两字节，大端存取
 	Camouflage([]byte, Send) ([]byte, int)
 
 	// 防嗅探，
@@ -63,9 +66,9 @@ type IPlugin interface {
 
 	// 优先级，越是优先越后运行	0是最高优先级
 	// !!! 一个重要的解释：前面三位是保留位
-	// 当八位0001,xxxx,xxxx,xxxx这样格式的，为在socks5协议之前的混淆协议，这时启用Camouflage函数，
-	// 当八位0010,xxxx,xxxx,xxxx格式的，为加密或操作socks协议本身，这个主要防止在建立socks5连接阶段被嗅探,启用AntiSniffing
-	// 当八位0100,xxxx,xxxx,xxxx格式的，为加密或操作传输内容的 启用Ornament函数
+	// 当十六位0001,xxxx,xxxx,xxxx这样格式的，为在socks5协议之前的混淆协议，这时启用Camouflage函数，
+	// 当十六位0010,xxxx,xxxx,xxxx格式的，为加密或操作socks协议本身，这个主要防止在建立socks5连接阶段被嗅探,启用AntiSniffing
+	// 当十六位0100,xxxx,xxxx,xxxx格式的，为加密或操作传输内容的 启用Ornament函数
 	// 每四位表示对应函数的优先级001->最右四位，以此类推
 	// 优先级相同时会随机在前在后 这不利于客户端解码 所以请各个插件各自权衡好优先级,也可以配置文件形式给出留给用户设定
 	Priority() uint16
@@ -124,7 +127,7 @@ func (s sortPriFuns) Less(i, j int) bool {
 
 // 根据优先级排序
 // 返回的是三个函数根据优先级排好序的函数数组
-func (p *Plugins)SortPriority() (EC func() byte,Cs []IPluFun, As []IPluFun, Os []IPluFun){
+func (p *Plugins)SortPriority() (EC func() []byte,Cs []IPluFun, As []IPluFun, Os []IPluFun){
 
 	var Cfuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
 	var Afuns sortPriFuns = make([]*sortPriFun, 0, len(p.Pmap))
@@ -165,8 +168,8 @@ func (p *Plugins)SortPriority() (EC func() byte,Cs []IPluFun, As []IPluFun, Os [
 		// 如果存在可用的伪装函数，那么EndCam可用
 		EC = p.Pmap[Cfuns[len(Cfuns)-1].id].EndCam
 	} else {
-		EC = func() byte {
-			// ascii只用7位，这个没被用 协议内容只可能是ascii信息
+		// 如果伪装函数不存在，就返回一个不是标记的标记
+		EC = func() []byte {
 			return END_FLAG
 		}
 	}
@@ -176,13 +179,13 @@ func (p *Plugins)SortPriority() (EC func() byte,Cs []IPluFun, As []IPluFun, Os [
 }
 
 // 最后返回根据是否生效，以及各插件指定函数的优先级分别返回三个总函数
-func (p *Plugins)GetCAO() (EC func() byte, C IPluFun, A IPluFun, O IPluFun) {
+func (p *Plugins)GetCAO() (EC func() []byte, C IPluFun, A IPluFun, O IPluFun) {
 	EC, Cs, As, Os := p.SortPriority()
 
 	var genCAO = func(ss []IPluFun) (s IPluFun) {
 		s = func(in []byte, send bool) (out []byte, l int) {
 			out = in
-			l = len(out)
+			l = len(in)
 			for _, v := range ss {
 				out, l = v(out, send)
 			}
@@ -198,13 +201,13 @@ func (p *Plugins)GetCAO() (EC func() byte, C IPluFun, A IPluFun, O IPluFun) {
 }
 
 type bigIPlugin struct {
-	EC func() byte
+	EC func() []byte
 	C IPluFun
 	A IPluFun
 	O IPluFun
 }
 
-func (b *bigIPlugin)EndCam() byte {
+func (b *bigIPlugin)EndCam() []byte {
 	return b.EC()
 }
 
@@ -219,7 +222,7 @@ func (b *bigIPlugin)Ornament(bs []byte, send bool) ([]byte, int) {
 }
 // 以下三函数只为实现接口
 func (b *bigIPlugin)Priority() uint16 {
-	return 0x0000
+	return 0x7000
 }
 func (b *bigIPlugin)GetID() string {
 	return "v"
@@ -292,6 +295,7 @@ func PluginsFromDir(pluginDir string) (ps *Plugins, e error) {
 		// 这时拿到插件要告诉我们的信息了
 		if IP, ok := symbol.(IPlugin); ok {
 			ps.Register(IP)
+			fmt.Printf("load plugin %s\n", name)
 			continue
 		} else {
 			Logff("Filename: %s, Failed to register plugin", LOG_WARNING, name)

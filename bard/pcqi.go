@@ -64,7 +64,7 @@ func (p *PCQInfo) Response(conn *Conn, server string) error {
 
 
 func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
-	r := bufio.NewReaderSize(conn, 6*1024)
+	r := bufio.NewReaderSize(conn, BUFSIZE)
 
 	if p.Cmd == REQUEST_TCP {
 
@@ -96,8 +96,12 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 		//fmt.Println("xxxxx")
 		go func() {
 			defer wg.Done()
+
+			// 从客户端读出的数据可能超错BUFSIZE
+			readbuf := make([]byte, ReadBUFSIZE)
+
 			// 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
-			written, e := Pipe(remote, r, dealOrnament(RECEIVE, conn.plugin))
+			written, e := PipeBuffer(remote, r, readbuf, dealOrnament(RECEIVE, conn.plugin))
 			if e != nil {
 				Deb.Printf("从r中写入到remote失败: %v", e)
 			} else {

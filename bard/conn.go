@@ -1,7 +1,10 @@
 package bard
 
 import (
+	"bytes"
+	"fmt"
 	"net"
+	"runtime"
 	"time"
 )
 
@@ -60,6 +63,8 @@ func (c *Conn) SetDeadline(t time.Time) error {
 
 func (c *Conn) Write(b []byte) (n int, err error) {
 	var resp []byte = b
+	var addlen = 0
+	blen := len(b)
 	p := c.plugin
 	if p == nil {
 		goto Write
@@ -67,40 +72,153 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 
 	// 处理tcp负载数据内容
 	resp, n = p.AntiSniffing(resp, SEND)
+	addlen = n - blen
 
 	// 处理添加混淆内容
 	resp, n = p.Camouflage(resp, SEND)
+	addlen = n - blen
 
 Write:
 	n, err = c.Conn.Write(resp)
+	n = n - addlen			// 减去增加的内容才是真实的内容   // node
 	_ = c.SetDeadline(c.GetDeadline())
 	return
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
-	// 切片是引用类型 如果在函数内重新赋值（引用本身赋值），那么函数外无改变
-	// 为了能够实现net.Conn接口 这里处理负载内容只能是压缩算法
-
-	//var req []byte
-	n, err = c.Conn.Read(b)
-	_ = c.SetDeadline(c.GetDeadline())
-
+	// 如果没插件那就正常读取
 	if c.plugin == nil {
+		n, err = c.Conn.Read(b)
+		_ = c.SetDeadline(c.GetDeadline())
 		return
 	}
 
-	//fmt.Println("111111    ", n)
-	p := c.plugin
-	// todo 可能b会存在太小而无法容下处理后的数据  所以这里不考虑压缩算法
-	// 处理摘除混淆
-	_, n = p.Camouflage(b[0:n], RECEIVE)
 
+	// 切片是引用类型 如果在函数内重新赋值（引用本身赋值），那么函数外无改变
+	// 为了能够实现net.Conn接口 这里处理负载内容只能是压缩算法
+
+	p := c.plugin
+	// 处理摘除混淆
+	sep := p.EndCam()
+	temp, err := getWriterBlock(c.Conn, sep)
+
+	if err != nil {
+		return 0, err
+	}
+
+	//fmt.Printf("混淆报头%d：%s\n", len(temp), temp)
+	_, n = p.Camouflage(temp, RECEIVE)
+	fmt.Println("数据块大小：", n)
+
+	nr, err := c.Conn.Read(b[:n])
+	for nr != n {
+		// 如果数据还没完全到达   先让本协程让出时间片 等待一会再读取
+		runtime.Gosched()
+		i, err := c.Conn.Read(b[nr:n])
+
+		if err != nil {
+			return  nr, err
+		}
+		nr += i
+	}
+
+	//fmt.Println(nr)
+	_ = c.SetDeadline(c.GetDeadline())
+
+	//fmt.Println("get c:")
+	//fmt.Printf("%s\n", b[:n])
 	//fmt.Println("-----1-------",n)
 
 	// 处理tcp上的数据负载
 	_, n = p.AntiSniffing(b[0:n], RECEIVE)
-	// 可能会出现len(b) > n的情况，具体看插件实现
-	//fmt.Println("----2-----",n)
+	//fmt.Println("-------收到ca：\t"+string(b[0:n]))
+
 	return
 }
 
+// FIXME first
+
+// 读取时需要还原原发送块
+func getWriterBlock(conn net.Conn, sp []byte) ([]byte, error) {
+	//       方案二：conn第一个读到的双字节代表混淆长度   因为网络包反正都是分包发的，防火墙无法识别这个双字节是上次的携带数据还是这次的信息数据
+	// 56*len(sp)+1
+	source := make([]byte, 1)
+	var err error
+	//conn.Read(source)				// fixed 可能读不完全的情况， 应该修复
+	_, err = ReadFull(conn, source)
+	if err != nil {
+		return source, err
+	}
+	for {
+		if bytes.Index(source, sp) > -1 {
+			break
+		}
+		source, err = ReadByteAppend(conn, source)
+		if err != nil {
+			return source, err
+		}
+	}
+	// 此时得到的是混淆的头部，还需要根绝头部读取
+
+	return source, nil
+}
+
+// 另一种解决方案 返回的是混淆头部 双字节 大端字节序   有特征 
+func getWriterBlock1(conn net.Conn) ([]byte, error) {
+	headlen := make([]byte, 2)
+	//n, err := conn.Read(headlen)
+	_, err := ReadFull(conn, headlen)
+	if err != nil {
+		return headlen, err
+	}
+	var hlh uint = uint(headlen[0])
+	var hll uint = uint(headlen[1])
+	// headlenght
+	hl := hlh << 8 + hll
+	head := make([]byte, hl)
+
+	_, err = ReadFull(conn, head)
+	if err != nil {
+		return head, err
+	}
+	return head, nil
+
+}
+
+// 出错 or 读满bs结束
+func ReadFull(conn net.Conn, bs []byte) (n int, err error) {
+	lens := len(bs)
+	n = 0
+	for n != lens {
+		i, err := conn.Read(bs[n:])
+		n += i
+		if err != nil {
+			return n, err
+		}
+		if n == lens {
+			return n, nil
+		}
+		// 没读取完就让出时间片等下在读
+		runtime.Gosched()
+	}
+	return lens, nil
+}
+
+func ReadByteAppend(conn net.Conn, source []byte) ([]byte, error) {
+	temp := make([]byte, 1)
+	_, err := ReadFull(conn, temp)
+	if err != nil {
+		return source, err
+	}
+	//n, err := conn.Read(temp)
+	//if err != nil {
+	//	//
+	//	return source
+	//}
+	//for n != 1 {
+	//	runtime.Gosched()
+	//	n, err = conn.Read(temp)
+	//}
+	bs := append(source, temp...)
+	return bs, nil
+}
