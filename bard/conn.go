@@ -100,7 +100,11 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	p := c.plugin
 	// 处理摘除混淆
 	sep := p.EndCam()
-	temp := getWriterBlock(c.Conn, sep)
+	temp, err := getWriterBlock(c.Conn, sep)
+
+	if err != nil {
+		return 0, err
+	}
 
 	//fmt.Printf("混淆报头%d：%s\n", len(temp), temp)
 	_, n = p.Camouflage(temp, RECEIVE)
@@ -135,27 +139,86 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 // FIXME first
 
 // 读取时需要还原原发送块
-func getWriterBlock(conn net.Conn, sp []byte) []byte {
-	// s 77 c 56 todo 解决这里的效率问题
-	source := make([]byte, 56*len(sp))
-	conn.Read(source)
+func getWriterBlock(conn net.Conn, sp []byte) ([]byte, error) {
+	//       方案二：conn第一个读到的双字节代表混淆长度   因为网络包反正都是分包发的，防火墙无法识别这个双字节是上次的携带数据还是这次的信息数据
+	// 56*len(sp)+1
+	source := make([]byte, 1)
+	var err error
+	//conn.Read(source)				// fixed 可能读不完全的情况， 应该修复
+	_, err = ReadFull(conn, source)
+	if err != nil {
+		return source, err
+	}
 	for {
 		if bytes.Index(source, sp) > -1 {
 			break
 		}
-		source = ReadByteAppend(conn, source)
+		source, err = ReadByteAppend(conn, source)
+		if err != nil {
+			return source, err
+		}
 	}
 	// 此时得到的是混淆的头部，还需要根绝头部读取
 
-
-
-
-	return source
+	return source, nil
 }
 
-func ReadByteAppend(conn net.Conn, source []byte) []byte {
+// 另一种解决方案 返回的是混淆头部 双字节 大端字节序   有特征 
+func getWriterBlock1(conn net.Conn) ([]byte, error) {
+	headlen := make([]byte, 2)
+	//n, err := conn.Read(headlen)
+	_, err := ReadFull(conn, headlen)
+	if err != nil {
+		return headlen, err
+	}
+	var hlh uint = uint(headlen[0])
+	var hll uint = uint(headlen[1])
+	// headlenght
+	hl := hlh << 8 + hll
+	head := make([]byte, hl)
+
+	_, err = ReadFull(conn, head)
+	if err != nil {
+		return head, err
+	}
+	return head, nil
+
+}
+
+// 出错 or 读满bs结束
+func ReadFull(conn net.Conn, bs []byte) (n int, err error) {
+	lens := len(bs)
+	n = 0
+	for n != lens {
+		i, err := conn.Read(bs[n:])
+		n += i
+		if err != nil {
+			return n, err
+		}
+		if n == lens {
+			return n, nil
+		}
+		// 没读取完就让出时间片等下在读
+		runtime.Gosched()
+	}
+	return lens, nil
+}
+
+func ReadByteAppend(conn net.Conn, source []byte) ([]byte, error) {
 	temp := make([]byte, 1)
-	conn.Read(temp)
+	_, err := ReadFull(conn, temp)
+	if err != nil {
+		return source, err
+	}
+	//n, err := conn.Read(temp)
+	//if err != nil {
+	//	//
+	//	return source
+	//}
+	//for n != 1 {
+	//	runtime.Gosched()
+	//	n, err = conn.Read(temp)
+	//}
 	bs := append(source, temp...)
-	return bs
+	return bs, nil
 }

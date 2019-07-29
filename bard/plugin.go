@@ -222,7 +222,7 @@ func (b *bigIPlugin)Ornament(bs []byte, send bool) ([]byte, int) {
 }
 // 以下三函数只为实现接口
 func (b *bigIPlugin)Priority() uint16 {
-	return 0x0000
+	return 0x7000
 }
 func (b *bigIPlugin)GetID() string {
 	return "v"
