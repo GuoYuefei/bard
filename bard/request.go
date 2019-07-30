@@ -232,13 +232,13 @@ func NewRemoteConn(config *Config, pcqi *PCQInfo, plugin IPlugin) (remoteConn *C
 
 	r := bufio.NewReader(remoteConn)
 
-	pcrsp, err = ClientHandleShakeWithRemote(r, remoteConn, pcqi)
+	pcrsp, err = ClientHandleShakeWithRemote(r, remoteConn, pcqi, config)
 
 	return
 }
 
 // 与远程代理服务器握手
-func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo) (pcrsp *PCRspInfo,e error) {
+func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo, config *Config) (pcrsp *PCRspInfo,e error) {
 	conn.Write([]byte{SocksVersion, 0x02, NOAUTH, AuthUserPassword})
 
 	b, e := r.ReadByte()
@@ -257,7 +257,11 @@ func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo) (pc
 	}
 
 	if method == AuthUserPassword {
-		// todo 进行密码验证环节
+		// endtodo 进行密码验证环节
+		if !UserPassWDClient(r, conn, config.Users[0]) {
+			e = errors.New("user password: server auth refused")
+			return
+		}
 	} else if method != NOAUTH {
 		// 不是账号密码验证和不需要验证两种方式，就返回错误
 		e = errors.New("server return Auth method error")
