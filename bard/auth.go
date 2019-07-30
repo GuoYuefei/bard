@@ -33,7 +33,7 @@ func Auth(authMethods []byte, r *bufio.Reader, conn net.Conn, config *Config) ([
 				return []byte{SocksVersion, NOAUTH}, true
 			case AuthUserPassword:
 				// 用户名和密码 认证
-				return UserPassWD(r, conn, config.Users)
+				return UserPassWDServer(r, conn, config.Users)
 			default:					// 无验证方式 就拒绝连接
 				goto Refuse
 			}
@@ -53,7 +53,7 @@ Refuse:
 @return []byte 是认证之后应该返回客户端的代码  可以分成拒绝和接受两种
 @return bool 返回接受连接与否
  */
-func UserPassWD(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bool) {
+func UserPassWDServer(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bool) {
 	var (
 		subProtocolVer byte
 		ulen byte
@@ -114,4 +114,42 @@ func UserPassWD(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bool) {
 Refuse :
 	return []byte{UPSubProtocolVer, 0x01}, false
 
+}
+
+/**-----------------------------客户端权限认证部分----------------------------**/
+
+// 返回是否验证成功
+// @param r			// 也是与服务器端的通讯连接
+// @param conn		// 与服务器端的通讯连接
+// @param user		// 只需要单个user信息就行了，这和服务器端不同
+func UserPassWDClient(r *bufio.Reader, conn net.Conn, user *User) bool {
+	var (
+		uname []byte = []byte(user.Username)
+		ulen byte = byte(len(uname))
+		passwd []byte = []byte(user.Password)
+		plen byte = byte(len(passwd))
+	)
+	req := []byte{UPSubProtocolVer, ulen}
+	req = append(append(append(req, uname...), plen), passwd...)
+	_, err := conn.Write(req)
+	if err != nil {
+		return false
+	}
+	subp, err := r.ReadByte()
+	if err != nil {
+		return false
+	}
+	if subp != UPSubProtocolVer {
+		Deb.Println("sub protocol version error, server send version is", subp)
+		return false
+	}
+	resp, err := r.ReadByte()
+	if err != nil {
+		return false
+	}
+	if resp != 0x00 {
+		// 如果服务器端不同意连接
+		return false
+	}
+	return true
 }

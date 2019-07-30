@@ -2,10 +2,10 @@
 server: 198.46.183.156
 server_port: 1081
 # Discontinuation time after no request
-timeout: 40
+timeout: 60
 
-local_address: 192.168.1.22
-local_port: 1081
+local_address: 127.0.0.1
+local_port: 1082
 
 
 # Supported authentication methods                             支持的认证方式 ， 这边服务程序只支持一种验证方式，需要在二者中选择
