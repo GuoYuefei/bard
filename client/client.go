@@ -118,6 +118,12 @@ func doConfig() (config *bard.Config) {
 	return
 }
 
+// todo 以后记得解决
+//  windows go语言还不支持插件编译，不知道以后支不支持，暂行方案，直接一起编译把
+func winPlugin() bard.IPlugin {
+
+}
+
 // client easy example
 func fun() {
 	netconn, err := net.Dial("tcp", "127.0.0.1:1081")
