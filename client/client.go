@@ -2,10 +2,12 @@ package main
 
 import (
 	"bard/bard"
+	"bard/client/plugin"
 	"bufio"
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 )
 
 const (
@@ -94,15 +96,7 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugin bar
 
 }
 
-func doPlugin() bard.IPlugin {
-	ps, err := bard.PluginsFromDir(PluginDir)
-	if err != nil {
-		// 上面函数已有错误处理
-		return nil
-	}
-	plugin := ps.ToBigIPlugin()
-	return plugin
-}
+
 
 func doConfig() (config *bard.Config) {
 	config, err := bard.ParseConfig(ConfigPath)
@@ -117,6 +111,30 @@ func doConfig() (config *bard.Config) {
 
 	return
 }
+
+func doPlugin() bard.IPlugin {
+	if runtime.GOOS == "windows" {
+		return winPlugin()
+	}
+	return otherPlugin()
+}
+
+func otherPlugin() bard.IPlugin {
+	ps, err := bard.PluginsFromDir(PluginDir)
+	if err != nil {
+		// 上面函数已有错误处理
+		return nil
+	}
+	plugin := ps.ToBigIPlugin()
+	return plugin
+}
+
+// todo 以后记得解决
+//  windows go语言还不支持插件编译，不知道以后支不支持，暂行方案，直接一起编译把
+func winPlugin() bard.IPlugin {
+	return plugin.V
+}
+
 
 // client easy example
 func fun() {

@@ -7,5 +7,8 @@
 # 编译好的debug的插件不上传
 *.so
 
+# windows执行文件不上传
+*.exe
+
 # go mod生成的sum文件
 go.sum
