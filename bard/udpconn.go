@@ -49,7 +49,7 @@ type Packet struct {
 	timeout time.Duration
 	Client  *net.UDPAddr
 	Servers map[string]*net.UDPAddr // 远程主机应该有一个列表 客户端第一次发给远程主机的时候将其记录进Servers列表
-	Socks   *Conn
+	Socks   *Conn						// 插件类型一般是由Socks带入Packet的
 	message chan *UdpMessage
 	Frag    uint8 // udp分段
 }
@@ -219,6 +219,7 @@ func (p *Packet) AddServer(key string, server *net.UDPAddr) {
 
 // 监听 但是固定双方通道的两头的主机地址
 // 客户端使用
+// 因为是客户端使用，所以Packet中的p.Servers其实是本地的服务器， p.Client客户端是指远程代理服务器（固定）
 func (p *Packet) ListenToFixedTarget(serverKey string) error {
 	var message = &UdpMessage{}
 	var buf = make([]byte, BUFSIZE)

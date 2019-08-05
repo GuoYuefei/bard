@@ -2,7 +2,6 @@ package bard
 
 import (
 	"bytes"
-	"fmt"
 	"net"
 	"runtime"
 	"time"
@@ -69,9 +68,16 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	if p == nil {
 		goto Write
 	}
+	/**
+	******************************有插件处理部分*************************************
+	 */
 
 	// 处理tcp负载数据内容
 	resp, n = p.AntiSniffing(resp, SEND)
+	addlen = n - blen
+
+	// 在加密和混淆之间加入自定义的控制信息，主要需要知道加密数据块的长度
+	resp, n = DefaultTCSP.WriteDo(resp)
 	addlen = n - blen
 
 	// 处理添加混淆内容
@@ -80,7 +86,7 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 
 Write:
 	n, err = c.Conn.Write(resp)
-	n = n - addlen			// 减去增加的内容才是真实的内容   // node
+	n = n - addlen			// 减去增加的内容才算是写入数据的长度
 	_ = c.SetDeadline(c.GetDeadline())
 	return
 }
@@ -92,6 +98,10 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 		_ = c.SetDeadline(c.GetDeadline())
 		return
 	}
+
+	/**
+	******************************有插件处理部分*************************************
+	 */
 
 
 	// 切片是引用类型 如果在函数内重新赋值（引用本身赋值），那么函数外无改变
@@ -108,19 +118,23 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 
 	//fmt.Printf("混淆报头%d：%s\n", len(temp), temp)
 	_, n = p.Camouflage(temp, RECEIVE)
-	fmt.Println("数据块大小：", n)
+	//fmt.Println("数据块大小：", n)
 
-	nr, err := c.Conn.Read(b[:n])
-	for nr != n {
-		// 如果数据还没完全到达   先让本协程让出时间片 等待一会再读取
-		runtime.Gosched()
-		i, err := c.Conn.Read(b[nr:n])
+	_, n = DefaultTCSP.ReadDo(c.Conn)
 
-		if err != nil {
-			return  nr, err
-		}
-		nr += i
-	}
+	n, err = ReadFull(c.Conn, b[:n])
+
+	//nr, err := c.Conn.Read(b[:n])
+	//for nr != n {
+	//	// 如果数据还没完全到达   先让本协程让出时间片 等待一会再读取
+	//	runtime.Gosched()
+	//	i, err := c.Conn.Read(b[nr:n])
+	//
+	//	if err != nil {
+	//		return  nr, err
+	//	}
+	//	nr += i
+	//}
 
 	//fmt.Println(nr)
 	_ = c.SetDeadline(c.GetDeadline())

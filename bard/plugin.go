@@ -52,7 +52,6 @@ type IPlugin interface {
 
 	// 伪装、混淆， 在socks5协议之前伪装协议头
 	// 也就是在socks5之前加一个啥协议什么的
-	// 仅在socks5握手时有用 在接收时第一个返回数据为各分块的长度，一个长度占两字节，大端存取
 	Camouflage([]byte, Send) ([]byte, int)
 
 	// 防嗅探，

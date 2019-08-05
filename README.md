@@ -21,7 +21,8 @@ Now that you have do something it's time to build your application:
 
 ```shell
 cd bard
-go mod tidy
+git submodule init
+git submodule update
 go build -o proxyserver ./server/server.go
 go build -o proxyclient ./client/client.go
 ```
@@ -45,9 +46,8 @@ If you don't want to write the plugin yourself, I will provide a few plugins ava
 As for the documentation needed to write the plugin, it will be released after I release the v1.0.0 version.
 
 ## Node 
-
-Since golang does not support building plugins on Windows, the plugin system is temporarily invalid for Windows. Looking for a plugin system alternative. RFC may be used.
-
+1. You can get the installation script on the release page of this project
+2. Windows is different from other Unix-like systems in the way it is built. You can refer to the construction script of Windows client in the publishing page.
 ## License
 
 GNU AFFERO GENERAL PUBLIC LICENSE (AGPLv3.0)

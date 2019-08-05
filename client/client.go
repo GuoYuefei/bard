@@ -2,7 +2,7 @@ package main
 
 import (
 	"bard/bard"
-	"bard/client/plugin"
+	cPlugin "bard/client/plugin"
 	"bufio"
 	"fmt"
 	"io"
@@ -132,7 +132,7 @@ func otherPlugin() bard.IPlugin {
 // todo 以后记得解决
 //  windows go语言还不支持插件编译，不知道以后支不支持，暂行方案，直接一起编译把
 func winPlugin() bard.IPlugin {
-	return plugin.V
+	return cPlugin.V
 }
 
 
