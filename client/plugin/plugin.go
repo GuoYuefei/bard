@@ -1,16 +1,26 @@
 package plugin
 
 import (
+	"bard/bard"
 	"bard/bard-plugin/base"
 )
 
+var plugins = []bard.IPlugin{
+	base.V,
 
-
-var V = base.Plugin {
-	ID:  "base",
-	Ver: "0.1.0",
-	Pri: 0x3111,
-	DESKEY: []byte("12345678"),
-	END_FLAG: []byte("\r\n\r\n"),
 }
+
+func WinPlugins() *bard.Plugins {
+	ps := &bard.Plugins{}
+
+	ps.Init()
+
+	for _, v := range plugins {
+		ps.Register(v)
+	}
+
+	return ps
+}
+
+
 

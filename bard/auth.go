@@ -69,7 +69,6 @@ func UserPassWDServer(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bo
 
 	subProtocolVer, err = r.ReadByte()
 
-
 	if subProtocolVer != UPSubProtocolVer {
 		Logf("The User/Password sub-protocol version is %d, not %d", subProtocolVer, UPSubProtocolVer)
 		goto Refuse		// 0x01代表拒绝  协议版本都对不上，小样还想连接

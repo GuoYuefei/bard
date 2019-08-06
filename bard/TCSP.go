@@ -1,6 +1,8 @@
 package bard
 
-import "net"
+import (
+	"net"
+)
 
 /**
 	本文件为传输控制子协议 依旧为插件形式
@@ -32,12 +34,29 @@ type TCSPWriteDo interface {
 type TCSubProtocol interface {
 	TCSPReadDo
 	TCSPWriteDo
+	ID() string
+}
+
+type TCSubProtocols struct {
+	Tmap map[string] TCSubProtocol
+}
+
+func (t *TCSubProtocols)Init() {
+	t.Tmap = make(map[string] TCSubProtocol)
+}
+
+func (t *TCSubProtocols)Register(protocol TCSubProtocol) {
+	t.Tmap[protocol.ID()] = protocol
 }
 
 // 可以通过组合AssembleTCSP来拓展它
 type AssembleTCSP struct {
 	readDo ReadDoFuncType
 	writeDo WriteDoFunType
+}
+
+func (a *AssembleTCSP)ID() string {
+	return "Default"
 }
 
 // 将do注册如AssembleTCSP
@@ -65,12 +84,14 @@ func DefaultTCSPReadDo(conn net.Conn) ([]byte, int) {
 	// 大端
 	lenh, lenl := int(lslice[0]), int(lslice[1])
 	l := lenh<<8+lenl
+	//fmt.Println(lenh, lenl, l)
 	return lslice, l
 }
 
 func DefaultTCSPWriteDo(bs []byte) ([]byte, int) {
 	l := len(bs)
 	lenh, lenl := byte(l>>8), byte(l)
+	//fmt.Println(lenh, lenl)
 	lslice := []byte{lenh, lenl}
 	bs = append(lslice, bs...)
 	return bs, len(bs)

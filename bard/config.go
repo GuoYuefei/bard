@@ -35,6 +35,14 @@ type Config struct {
 
 	Timeout int 			`yaml:"timeout"`
 
+	// Global Plugin Config
+	// 插件id信息
+	Plugins []string			`yaml:"plugins"`
+	// 传输控制子协议id
+	TCSP string					`yaml:"TCSP"`
+
+
+
 	Debug bool				`yaml:"debug"`
 	Slog bool				`yaml:"slog"`
 }

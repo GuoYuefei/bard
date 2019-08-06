@@ -260,6 +260,21 @@ func (p *Plugins) Register(plugin IPlugin) {
 	}
 }
 
+// 根据给出的ids返回小型的plugins
+// 如果ids中有p不存在的，那么第二个返回值返回false， 否则为true
+func (p *Plugins) FindByIDs(ids []string) (*Plugins, bool) {
+	ps := &Plugins{}
+	ps.Init()
+	for _, id := range ids {
+		if v, ok := p.Pmap[id]; ok {
+			ps.Register(v)
+			continue
+		}
+		return ps, false
+	}
+	return ps, true
+}
+
 // 如果文件夹下没有有效插件，也会返回错误，该错误为PLUGIN_ZERO
 func PluginsFromDir(pluginDir string) (ps *Plugins, e error) {
 	ps = &Plugins{}

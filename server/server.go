@@ -3,6 +3,7 @@ package main
 import (
 	"bard/bard"
 	"bufio"
+	"fmt"
 	"net"
 )
 
@@ -23,7 +24,7 @@ func main() {
 		bard.Logf("Failed to open the proxy server with the following error: %v", err)
 		return
 	}
-	bard.Logf("Open the proxy service with the address port of %s:%d", config.GetServers()[0], config.ServerPort)
+	fmt.Printf("Open the proxy service with the address port of %s:%d\n", config.GetServers()[0], config.ServerPort)
 	for {
 		netconn, err := listener.Accept()
 

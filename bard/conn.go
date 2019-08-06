@@ -77,7 +77,7 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	addlen = n - blen
 
 	// 在加密和混淆之间加入自定义的控制信息，主要需要知道加密数据块的长度
-	resp, n = DefaultTCSP.WriteDo(resp)
+	resp, n = DefaultTCSP.WriteDo(resp[0:n])
 	addlen = n - blen
 
 	// 处理添加混淆内容
@@ -110,14 +110,17 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	p := c.plugin
 	// 处理摘除混淆
 	sep := p.EndCam()
-	temp, err := getWriterBlock(c.Conn, sep)
+	if len(sep)!=1 || sep[0] != 0xff {
+		_, err := getWriterBlock(c.Conn, sep)
 
-	if err != nil {
-		return 0, err
+		if err != nil {
+			return 0, err
+		}
 	}
 
+
 	//fmt.Printf("混淆报头%d：%s\n", len(temp), temp)
-	_, n = p.Camouflage(temp, RECEIVE)
+	//_, n = p.Camouflage(temp, RECEIVE)
 	//fmt.Println("数据块大小：", n)
 
 	_, n = DefaultTCSP.ReadDo(c.Conn)
@@ -149,8 +152,6 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 
 	return
 }
-
-// FIXME first
 
 // 读取时需要还原原发送块
 func getWriterBlock(conn net.Conn, sp []byte) ([]byte, error) {

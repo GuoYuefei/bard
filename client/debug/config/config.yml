@@ -25,6 +25,10 @@ users:
     username: bard2
     password: bard21234
 
+# 全局plugin配置
+plugins:
+  - base
+TCSP: default
 
 ## Debugging Open Switch and Switch of Logging System
 ## default： false
