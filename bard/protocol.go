@@ -45,29 +45,43 @@ var ErrorAuth = errors.New("Authentication failed")
 
  */
 
-func ServerHandShake(r *bufio.Reader, conn net.Conn, config *Config) error {
+
+/**
+	返回通讯配置情况， 不由该函数负责向conn注册通讯配置
+	因为客户端（其实这时是一个本地服务器，标准的socks5服务器）在和本地客户端通讯的情况下没有配置通讯情况的需求
+ */
+func ServerHandShake(r *bufio.Reader, conn net.Conn, config *Config) (error, *CommConfig) {
+	var (
+		nmethods byte
+		buf []byte
+		resp []byte
+		ok bool
+		commConfig *CommConfig
+	)
+
 	version, err := r.ReadByte()
 
 	if err != nil {
-		return err
+		goto ErrReturn
 	}
 
 	if version != SocksVersion {
-		return fmt.Errorf("socks's version is %d", version)
+		err = fmt.Errorf("socks's version is %d", version)
+		goto ErrReturn
 	}
 
-	nmethods, _ := r.ReadByte()
+	nmethods, _ = r.ReadByte()
 	Deb.Printf("Methods' Lenght is %d", nmethods)
 
-	buf := make([]byte, nmethods)
+	buf = make([]byte, nmethods)
 
 	_, err = io.ReadFull(r, buf)
 	if err != nil {
-		return err
+		goto ErrReturn
 	}
 	Deb.Printf("验证方式为： %v", buf)
 
-	resp, ok := Auth(buf, r, conn, config)
+	resp, ok, commConfig = Auth(buf, r, conn, config)
 	if !ok {
 		Logf("Connection request from client IP %v, permission authentication failed", conn.RemoteAddr())
 	}
@@ -76,13 +90,45 @@ func ServerHandShake(r *bufio.Reader, conn net.Conn, config *Config) error {
 	r.Reset(conn)
 	_, err = conn.Write(resp)
 	if err != nil {
-		return err
+		goto ErrReturn
 	}
 	if !ok {
-		return ErrorAuth
+		err = ErrorAuth
+		goto ErrReturn
 	}
 
-	return nil
+	// 走完过场，你是最棒的。。握手成功
+	return nil, commConfig
+
+	ErrReturn:
+		return err, nil
+}
+
+/**
+	根据CommConfig来配置conn
+ */
+func CommConfigRegisterToConn(conn *Conn, config *CommConfig, plugins *Plugins, protocols *TCSubProtocols) (ok bool) {
+	ps, ok := plugins.FindByIDs(config.Plugins)
+	if !ok {
+		Deb.Printf("The plug-in cannot be found: %s\n", config.Plugins)
+		return ok
+	}
+	var protocol TCSubProtocol = nil
+	if config.TCSP != "" {
+		protocol = protocols.FindByID(config.TCSP)
+		if protocol == nil {
+			Deb.Printf("The TCSubProtocol cannot be found: %s\n", config.TCSP)
+			return false
+		}
+	}
+
+	if len(ps.Pmap) != 0 {
+		conn.Register(ps.ToBigIPlugin(), protocol)
+	} else {
+		conn.Register(nil, protocol)
+	}
+
+	return ok
 }
 
 

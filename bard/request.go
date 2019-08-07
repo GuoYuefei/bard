@@ -197,9 +197,13 @@ func (c *Client)PipeTcp() {
 	@param pcqi 是localConn接收到的请求信息
 	@param config 配置文件信息
 */
-func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config, plugin IPlugin) (c *Client, err error){
+func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config, plugins *Plugins, protocols *TCSubProtocols) (c *Client, err error){
 	c = &Client{}
-	remoteConn, pcrsp, err := NewRemoteConn(config, pcqi, plugin)
+
+
+
+	// todo 主要更改这个连接
+	remoteConn, pcrsp, err := NewRemoteConn(config, pcqi, plugins, protocols)
 
 	if err != nil {
 		return
@@ -219,26 +223,31 @@ func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config, plugin IPlugin) (
 }
 
 // 这个就是想
-func NewRemoteConn(config *Config, pcqi *PCQInfo, plugin IPlugin) (remoteConn *Conn, pcrsp *PCRspInfo, err error) {
+func NewRemoteConn(config *Config, pcqi *PCQInfo, plugins *Plugins, protocols *TCSubProtocols) (remoteConn *Conn, pcrsp *PCRspInfo, err error) {
 	conn, err := net.Dial("tcp", config.GetServers()[0]+":"+config.ServerPortString())
 	if err != nil {
 		return
 	}
 
+
 	remoteConn = NewConnTimeout(conn, config.Timeout)
-	if plugin != nil {
-		remoteConn.Register(plugin)
+
+	ok := CommConfigRegisterToConn(remoteConn, config.ComConfig, plugins, protocols)
+	if !ok {
+		err = errors.New("Global Communication Configuration Not Found! ")
+		return
 	}
 
 	r := bufio.NewReader(remoteConn)
 
-	pcrsp, err = ClientHandleShakeWithRemote(r, remoteConn, pcqi, config)
+	pcrsp, err = ClientHandleShakeWithRemote(r, remoteConn, pcqi, config, plugins, protocols )
 
 	return
 }
 
 // 与远程代理服务器握手
-func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo, config *Config) (pcrsp *PCRspInfo,e error) {
+func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo, config *Config,
+									plugins *Plugins, protocols *TCSubProtocols) (pcrsp *PCRspInfo,e error) {
 	conn.Write([]byte{SocksVersion, 0x02, NOAUTH, AuthUserPassword})
 
 	b, e := r.ReadByte()
@@ -268,7 +277,16 @@ func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo, con
 		return
 	}
 	r.Reset(conn)			// 清空缓存
+
+	// node 在发送请求前需要重新注册通讯配置信息
+	ok := CommConfigRegisterToConn(conn, config.Users[0].ComConfig, plugins, protocols)
+	if !ok {
+		e = errors.New("User Communication Configuration Not Found! ")
+		return
+	}
+
 	// 验证通过之后处理第二次握手----请求建立
+	// 也就是将客户端(客户端的客户端)请求内容转发给代理服务器
 	_, e = conn.Write(pcqi.ToBytes())
 	if e != nil {
 		return

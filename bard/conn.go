@@ -16,21 +16,28 @@ type Conn struct {
 	net.Conn
 	timeout time.Duration
 	plugin IPlugin
+	protocol TCSubProtocol
 }
 
 func NewConn(conn net.Conn) *Conn {
-	c := &Conn{conn, 0, nil}
+	c := &Conn{conn, 0, nil, nil}
 	return c
 }
 
 func NewConnTimeout(conn net.Conn, timeout int) *Conn {
-	c := &Conn{conn, 0, nil}
+	c := &Conn{conn, 0, nil, nil}
 	c.SetTimeout(timeout)
 	return c
 }
 
-func (c *Conn) Register(plugin IPlugin) {
+// 该注册方式是覆盖型的
+func (c *Conn) Register(plugin IPlugin, protocol TCSubProtocol) {
 	c.plugin = plugin
+	c.protocol = protocol
+}
+
+func (c *Conn) Protocol() TCSubProtocol {
+	return c.protocol
 }
 
 func (c *Conn) Plugin() IPlugin {

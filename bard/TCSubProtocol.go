@@ -11,6 +11,7 @@ import (
 
 type ReadDoFuncType = func(net.Conn) ([]byte, int)
 type WriteDoFunType = func([]byte) ([]byte, int)
+const DEFAULTTCSPID = "Default"
 
 type TCSPReadDo interface {
 	// @describe 根据协议从conn中读取控制信息
@@ -49,6 +50,13 @@ func (t *TCSubProtocols)Register(protocol TCSubProtocol) {
 	t.Tmap[protocol.ID()] = protocol
 }
 
+func (t *TCSubProtocols)FindByID(id string) TCSubProtocol {
+	if v, ok := t.Tmap[id]; ok {
+		return v
+	}
+	return nil
+}
+
 // 可以通过组合AssembleTCSP来拓展它
 type AssembleTCSP struct {
 	readDo ReadDoFuncType
@@ -56,7 +64,7 @@ type AssembleTCSP struct {
 }
 
 func (a *AssembleTCSP)ID() string {
-	return "Default"
+	return DEFAULTTCSPID
 }
 
 // 将do注册如AssembleTCSP
