@@ -20,7 +20,7 @@ users:
     com_config:
       plugins:
         - base
-      TCSP: default
+      TCSP: Default
   -
     username: bard2
     password: bard21234
@@ -29,7 +29,7 @@ users:
 com_config:
   plugins:
     - base
-  TCSP: default
+  TCSP: Default
 
 ## Debugging Open Switch and Switch of Logging System
 ## default： false
