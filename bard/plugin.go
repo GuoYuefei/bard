@@ -26,7 +26,7 @@ const (
 	RECEIVE = false
 )
 
-var PLUGIN_ZERO = errors.New("No valid plugins under the folder")
+var PLUGIN_ZERO = errors.New("No valid plugins under the folder ")
 
 type IPluFun func([]byte, bool) ([]byte, int)
 

@@ -1,4 +1,4 @@
-package plugin
+package win_plugin
 
 import (
 	"bard/bard"

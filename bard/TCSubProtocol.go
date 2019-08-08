@@ -1,7 +1,12 @@
 package bard
 
 import (
+	"errors"
+	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"plugin"
 )
 
 /**
@@ -12,6 +17,8 @@ import (
 type ReadDoFuncType = func(net.Conn) ([]byte, int)
 type WriteDoFunType = func([]byte) ([]byte, int)
 const DEFAULTTCSPID = "Default"
+
+var SubProtocol_ZERO = errors.New("No valid SubProtocol Plugin under the folder ")
 
 type TCSPReadDo interface {
 	// @describe 根据协议从conn中读取控制信息
@@ -55,6 +62,52 @@ func (t *TCSubProtocols)FindByID(id string) TCSubProtocol {
 		return v
 	}
 	return nil
+}
+
+func SubProtocolsFromDir(subProtocolsPath string) (ts *TCSubProtocols, e error) {
+	ts = &TCSubProtocols{}
+	ts.Init()
+	subprotocolsdir, e := os.Open(subProtocolsPath)
+	if e != nil {
+		Logff("Failed to open folder for plugin: %v", LOG_EXCEPTION, e)
+		return
+	}
+
+	// names 是文件夹下面所有文件的名字，这时候还要判断是不是.so后缀
+	names, e := subprotocolsdir.Readdirnames(0)
+
+	for _, name := range names {
+		if !isPluginFile(name) {
+			// 不是插件文件就跳过
+			continue
+		}
+		filep := filepath.Join(subProtocolsPath, name)
+		pfile, e := plugin.Open(filep)
+		if e != nil {
+			Logff("Filename: %s,Failed to open plugin: %v", LOG_WARNING, name, e)
+			continue
+		}
+		symbol, e := pfile.Lookup(SYMBOL_NAME)
+		if e != nil {
+			Logff("Filename: %s, Failed to Lookup symbol: %v", LOG_WARNING, name, e)
+			continue
+		}
+		// 这时拿到插件要告诉我们的信息了
+		if IP, ok := symbol.(TCSubProtocol); ok {
+			ts.Register(IP)
+			fmt.Printf("load plugin %s\n", name)
+			continue
+		} else {
+			Logff("Filename: %s, Failed to register plugin", LOG_WARNING, name)
+		}
+	}
+
+	if len(ts.Tmap) == 0 {
+		e = SubProtocol_ZERO
+	} else {
+		e = nil
+	}
+	return
 }
 
 // 可以通过组合AssembleTCSP来拓展它

@@ -2,7 +2,8 @@ package main
 
 import (
 	"bard/bard"
-	cPlugin "bard/client/plugin"
+	WP "bard/client/win_plugin"
+	WT "bard/client/win_sub_protocol"
 	"bufio"
 	"fmt"
 	"net"
@@ -12,6 +13,7 @@ import (
 const (
 	ConfigPath = "./client/debug/config/config.yml"
 	PluginDir = "./client/debug/plugins"
+	SubProtocolDir = "./client/debug/sub_protocols"
 )
 
 func main() {
@@ -120,17 +122,29 @@ func otherPlugin() *bard.Plugins {
 // todo 以后记得解决
 //  windows go语言还不支持插件编译，不知道以后支不支持，暂行方案，直接一起编译把
 func winPlugin() *bard.Plugins {
-	ps := cPlugin.WinPlugins()
+	ps := WP.WinPlugins()
 	return ps
 }
 
 func doTCSubProtocol() *bard.TCSubProtocols {
-	var ts = &bard.TCSubProtocols{}
-	ts.Init()
-	ts.Register(bard.DefaultTCSP)
-	// todo 这边应该从某个文件夹下取得其他传输控制子协议的插件
 
-	return ts
+	if runtime.GOOS == "windows" {
+		// windows
+		return WT.WinSubProtocols()
+	} else {
+		// 这是unix-like
+		protocols, e := bard.SubProtocolsFromDir(SubProtocolDir)
+		if e == bard.SubProtocol_ZERO {
+			bard.Deb.Println(e)
+		} else if e != nil {
+			bard.Logln(e)
+		}
+		// 整合
+		protocols.Register(bard.DefaultTCSP)
+
+		return protocols
+	}
+
 }
 
 

@@ -10,6 +10,7 @@ import (
 const (
 	ConfigPath = "./server/debug/config/config.yml"
 	PluginDir = "./server/debug/plugins"
+	SubProtocolDir = "./server/debug/sub_protocols"
 )
 
 
@@ -123,6 +124,17 @@ func doTCSubProtocol() *bard.TCSubProtocols {
 	ts.Init()
 	ts.Register(bard.DefaultTCSP)
 	// todo 这边应该从某个文件夹下取得其他传输控制子协议的插件
+	protocols, e := bard.SubProtocolsFromDir(SubProtocolDir)
+	if e == bard.SubProtocol_ZERO {
+		bard.Deb.Println(e)
+		return ts
+	} else if e != nil {
+		bard.Logln(e)
+		return ts
+	}
+	// 整合
+	protocols.Register(bard.DefaultTCSP)
 
-	return ts
+	return protocols
 }
+
