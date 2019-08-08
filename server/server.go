@@ -14,9 +14,11 @@ const (
 
 
 func main() {
+
 	config := doConfig()
 
-	plugin := doPlugin()
+	plugins := doPlugin()
+	TCSubProtocols := doTCSubProtocol()
 
 	listener, err := net.Listen("tcp", ":"+config.ServerPortString())
 	if err != nil {
@@ -35,13 +37,14 @@ func main() {
 
 		// 为了timeout重写了一个类型
 		conn := bard.NewConnTimeout(netconn, config.Timeout)
-		conn.Register(plugin)
+		// 注册默认插件
+		bard.CommConfigRegisterToConn(conn, config.ComConfig, plugins, TCSubProtocols)
 
-		go remoteServerHandleConn(conn, config)
+		go remoteServerHandleConn(conn, config, plugins, TCSubProtocols)
 	}
 }
 
-func remoteServerHandleConn(conn *bard.Conn, config *bard.Config) {
+func remoteServerHandleConn(conn *bard.Conn, config *bard.Config, plugins *bard.Plugins, protocols *bard.TCSubProtocols) {
 	defer func() {
 		err := conn.Close()
 		// timeout 可能会应发错误，原因此时conn已关闭
@@ -53,11 +56,19 @@ func remoteServerHandleConn(conn *bard.Conn, config *bard.Config) {
 	// 默认是4k，调高到6k
 	r := bufio.NewReaderSize(conn, 6*1024)
 
-	err := bard.ServerHandShake(r, conn, config)
+	err, commConfig := bard.ServerHandShake(r, conn, config)
 
 	if err != nil {			// 认证失败也会返回错误哦
 		return
 	}
+
+	// node server只需要直接将通讯配置直接注入就行了
+	ok := bard.CommConfigRegisterToConn(conn, commConfig, plugins, protocols)
+	if !ok {
+		return
+	}
+
+	// node 客户端在收到认证成功消息后就应该使用其通讯插件进行通讯 只有配置了相同的插件接下来的通讯才会有"共同语言"，才会成功进行
 
 	pcq, err := bard.ReadPCQInfo(r)
 	if err != nil {
@@ -97,13 +108,21 @@ func doConfig() (config *bard.Config) {
 	return
 }
 
-func doPlugin() bard.IPlugin {
+func doPlugin() *bard.Plugins {
 	ps, err := bard.PluginsFromDir(PluginDir)
 	if err != nil {
 		// 上面函数已有错误处理
 		return nil
 	}
-	plugin := ps.ToBigIPlugin()
-	return plugin
+	//plugin := ps.ToBigIPlugin()
+	return ps
 }
 
+func doTCSubProtocol() *bard.TCSubProtocols {
+	var ts = &bard.TCSubProtocols{}
+	ts.Init()
+	ts.Register(bard.DefaultTCSP)
+	// todo 这边应该从某个文件夹下取得其他传输控制子协议的插件
+
+	return ts
+}

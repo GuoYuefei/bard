@@ -18,17 +18,20 @@ authority_method: 0
 # 该设置，在远程代理服务器下为服务器设定用户信息。
 # 该设置，在本地服务器下为连接远程服务器用户信息(数组第一项) 和 如果本地服务器需要验证，那么也是本地服务器的账户密码(整个数组)
 users:
-  -
-    username: bard
+  - username: bard
     password: bard1234
-  -
-    username: bard2
+    com_config:
+      plugins:
+        - base
+      TCSP: Default
+  - username: bard2
     password: bard21234
 
-# 全局plugin配置
-plugins:
-  - base
-TCSP: default
+# 全局通讯配置
+com_config:
+  plugins:
+    - base
+  TCSP: Default
 
 ## Debugging Open Switch and Switch of Logging System
 ## default： false

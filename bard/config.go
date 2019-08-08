@@ -12,14 +12,18 @@ import (
 type User struct {
 	Username string						`yaml:"username"`
 	Password string						`yaml:"password"`
+	ComConfig *CommConfig					`yaml:"com_config"`
 
 	// 以上基础信息
 }
 
+type CommConfig struct {
+	// 插件id信息
+	Plugins []string					`yaml:"plugins"`
+	// 传输控制子协议id
+	TCSP string							`yaml:"TCSP"`
+}
 
-// 配置内容 配置文件使用json or yml， 简单嘛，易用嘛
-// 使用yml吧，哈哈哈， 就是为了学一种新的配置文件。 个人感觉json现在大多用于传输， yml适合做配置 因为还是需要有注释的
-// 其实json注释也能行，自己先做预处理
 
 type Config struct {
 	Server interface{} 		`yaml:"server"`
@@ -35,11 +39,8 @@ type Config struct {
 
 	Timeout int 			`yaml:"timeout"`
 
-	// Global Plugin Config
-	// 插件id信息
-	Plugins []string			`yaml:"plugins"`
-	// 传输控制子协议id
-	TCSP string					`yaml:"TCSP"`
+	// Global Plugin Config 下面两个配置，是用于握手阶段的
+	ComConfig *CommConfig	`yaml:"com_config"`
 
 
 

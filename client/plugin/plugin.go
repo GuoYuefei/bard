@@ -5,6 +5,9 @@ import (
 	"bard/bard-plugin/base"
 )
 
+/**
+	这里应该快速获取子包中定义好的客户端插件
+ */
 var plugins = []bard.IPlugin{
 	base.V,
 

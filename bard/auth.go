@@ -23,14 +23,17 @@ const (
 @param config 				authMethod		服务器选择的验证方式和账户密码的配置信息
 @param r conn				都是代表那个连接
 @return []byte 			返回能最后一步需要回复应该要发送的认证回复的代码
+@return bool 			返回权限认证是否成功
+@return []string		返回接下来要调用的插件集的id切片
+@return string  		返回接下传输控制子协议id
 */
-func Auth(authMethods []byte, r *bufio.Reader, conn net.Conn, config *Config) ([]byte, bool) {
+func Auth(authMethods []byte, r *bufio.Reader, conn net.Conn, config *Config) ([]byte, bool, *CommConfig) {
 	for _, v := range authMethods {
 		// 为服务器设定的认证方式，只提供一种
 		if v == config.AuthMethod {
 			switch v {
 			case NOAUTH: 					// 无需认证
-				return []byte{SocksVersion, NOAUTH}, true
+				return []byte{SocksVersion, NOAUTH}, true, config.ComConfig
 			case AuthUserPassword:
 				// 用户名和密码 认证
 				return UserPassWDServer(r, conn, config.Users)
@@ -41,7 +44,7 @@ func Auth(authMethods []byte, r *bufio.Reader, conn net.Conn, config *Config) ([
 	}
 	// should do something here
 Refuse:
-	return []byte{SocksVersion, REFUSE}, false
+	return []byte{SocksVersion, REFUSE}, false, nil
 }
 
 
@@ -52,8 +55,10 @@ Refuse:
 @param users是记录所有用户对象的指针的集合
 @return []byte 是认证之后应该返回客户端的代码  可以分成拒绝和接受两种
 @return bool 返回接受连接与否
+@return []string		返回接下来要调用的插件集的id切片
+@return string  		返回接下传输控制子协议id
  */
-func UserPassWDServer(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bool) {
+func UserPassWDServer(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bool, *CommConfig) {
 	var (
 		subProtocolVer byte
 		ulen byte
@@ -105,13 +110,13 @@ func UserPassWDServer(r *bufio.Reader, conn net.Conn, users []*User) ([]byte, bo
 	for _, v := range users {
 		Deb.Println(v.Username, v.Password)
 		if v.Username == string(uname) && v.Password == string(passwd) {
-			return []byte{UPSubProtocolVer, 0x00}, true				// 认证成功
+			return []byte{UPSubProtocolVer, 0x00}, true, v.ComConfig			// 认证成功
 		}
 	}
 	// 账号密码不正确 就执行Refuse
 
 Refuse :
-	return []byte{UPSubProtocolVer, 0x01}, false
+	return []byte{UPSubProtocolVer, 0x01}, false, nil				// 第二个参数为false之后，其后俩参数无效
 
 }
 
