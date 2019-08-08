@@ -108,11 +108,16 @@ func ServerHandShake(r *bufio.Reader, conn net.Conn, config *Config) (error, *Co
 	根据CommConfig来配置conn
  */
 func CommConfigRegisterToConn(conn *Conn, config *CommConfig, plugins *Plugins, protocols *TCSubProtocols) (ok bool) {
+	if config == nil {
+		// 没有配置就直接返回true
+		return true
+	}
 	ps, ok := plugins.FindByIDs(config.Plugins)
 	if !ok {
 		Deb.Printf("The plug-in cannot be found: %s\n", config.Plugins)
-		return ok
+		return false
 	}
+
 	var protocol TCSubProtocol = nil
 	if config.TCSP != "" {
 		protocol = protocols.FindByID(config.TCSP)
@@ -122,13 +127,16 @@ func CommConfigRegisterToConn(conn *Conn, config *CommConfig, plugins *Plugins, 
 		}
 	}
 
-	if len(ps.Pmap) != 0 {
-		conn.Register(ps.ToBigIPlugin(), protocol)
-	} else {
-		conn.Register(nil, protocol)
+	// node 只有配置了传输控制子协议才能注册
+	if protocol != nil {
+		if len(ps.Pmap) != 0 {
+			conn.Register(ps.ToBigIPlugin(), protocol)
+		} else {
+			conn.Register(nil, protocol)
+		}
 	}
 
-	return ok
+	return true
 }
 
 

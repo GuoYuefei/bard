@@ -200,8 +200,6 @@ func (c *Client)PipeTcp() {
 func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config, plugins *Plugins, protocols *TCSubProtocols) (c *Client, err error){
 	c = &Client{}
 
-
-
 	// todo 主要更改这个连接
 	remoteConn, pcrsp, err := NewRemoteConn(config, pcqi, plugins, protocols)
 
@@ -228,7 +226,6 @@ func NewRemoteConn(config *Config, pcqi *PCQInfo, plugins *Plugins, protocols *T
 	if err != nil {
 		return
 	}
-
 
 	remoteConn = NewConnTimeout(conn, config.Timeout)
 

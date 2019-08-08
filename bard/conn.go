@@ -84,7 +84,7 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	addlen = n - blen
 
 	// 在加密和混淆之间加入自定义的控制信息，主要需要知道加密数据块的长度
-	resp, n = DefaultTCSP.WriteDo(resp[0:n])
+	resp, n = c.protocol.WriteDo(resp[0:n])
 	addlen = n - blen
 
 	// 处理添加混淆内容
@@ -130,28 +130,11 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	//_, n = p.Camouflage(temp, RECEIVE)
 	//fmt.Println("数据块大小：", n)
 
-	_, n = DefaultTCSP.ReadDo(c.Conn)
+	_, n = c.protocol.ReadDo(c.Conn)
 
 	n, err = ReadFull(c.Conn, b[:n])
 
-	//nr, err := c.Conn.Read(b[:n])
-	//for nr != n {
-	//	// 如果数据还没完全到达   先让本协程让出时间片 等待一会再读取
-	//	runtime.Gosched()
-	//	i, err := c.Conn.Read(b[nr:n])
-	//
-	//	if err != nil {
-	//		return  nr, err
-	//	}
-	//	nr += i
-	//}
-
-	//fmt.Println(nr)
 	_ = c.SetDeadline(c.GetDeadline())
-
-	//fmt.Println("get c:")
-	//fmt.Printf("%s\n", b[:n])
-	//fmt.Println("-----1-------",n)
 
 	// 处理tcp上的数据负载
 	_, n = p.AntiSniffing(b[0:n], RECEIVE)

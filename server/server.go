@@ -14,22 +14,12 @@ const (
 
 
 func main() {
+
 	config := doConfig()
 
 	plugins := doPlugin()
-	
-	defaultPlugins, ok := plugins.FindByIDs(config.ComConfig.Plugins)
-	if !ok {
-		// 无这些id的插件就panic
-		bard.Logf("The default plug-in cannot be found: %s", config.ComConfig.Plugins)
-		return
-	}
-	defaultPlugin := defaultPlugins.ToBigIPlugin()
-
 	TCSubProtocols := doTCSubProtocol()
-	defaultProtocol := TCSubProtocols.FindByID(bard.DEFAULTTCSPID)
-	
-	
+
 	listener, err := net.Listen("tcp", ":"+config.ServerPortString())
 	if err != nil {
 		//log.Fatalln(err)
@@ -48,7 +38,7 @@ func main() {
 		// 为了timeout重写了一个类型
 		conn := bard.NewConnTimeout(netconn, config.Timeout)
 		// 注册默认插件
-		conn.Register(defaultPlugin, defaultProtocol)
+		bard.CommConfigRegisterToConn(conn, config.ComConfig, plugins, TCSubProtocols)
 
 		go remoteServerHandleConn(conn, config, plugins, TCSubProtocols)
 	}
@@ -118,7 +108,6 @@ func doConfig() (config *bard.Config) {
 	return
 }
 
-// todo 修改签名以获取插件集 搭配子协议
 func doPlugin() *bard.Plugins {
 	ps, err := bard.PluginsFromDir(PluginDir)
 	if err != nil {
