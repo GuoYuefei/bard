@@ -15,7 +15,7 @@ import (
 
 // !!!强制规定，所有插件都必须以V作为Symbol Name暴露出来
 const (
-	SYMBOL_NAME = "V"
+	PLUGIN_SYMBOL_NAME = "V"
 )
 
 var END_FLAG = []byte{0xff}				// 默认bigplugin的EndCam返回内容。表示不作处理
@@ -304,7 +304,7 @@ func PluginsFromDir(pluginDir string) (ps *Plugins, e error) {
 			Logff("Filename: %s,Failed to open plugin: %v", LOG_WARNING, name, e)
 			continue
 		}
-		symbol, e := pfile.Lookup(SYMBOL_NAME)
+		symbol, e := pfile.Lookup(PLUGIN_SYMBOL_NAME)
 		if e != nil {
 			Logff("Filename: %s, Failed to Lookup symbol: %v", LOG_WARNING, name, e)
 			continue

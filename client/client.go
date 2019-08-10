@@ -127,23 +127,24 @@ func winPlugin() *bard.Plugins {
 }
 
 func doTCSubProtocol() *bard.TCSubProtocols {
-
+	var protocols *bard.TCSubProtocols
 	if runtime.GOOS == "windows" {
 		// windows
-		return WT.WinSubProtocols()
+		protocols = WT.WinSubProtocols()
 	} else {
+		var e error
 		// 这是unix-like
-		protocols, e := bard.SubProtocolsFromDir(SubProtocolDir)
+		protocols, e = bard.SubProtocolsFromDir(SubProtocolDir)
 		if e == bard.SubProtocol_ZERO {
 			bard.Deb.Println(e)
 		} else if e != nil {
 			bard.Logln(e)
 		}
-		// 整合
-		protocols.Register(bard.DefaultTCSP)
-
-		return protocols
 	}
+	// 整合Default
+	protocols.Register(bard.DefaultTCSP)
+
+	return protocols
 
 }
 

@@ -1,6 +1,7 @@
 package bard
 
 import (
+	"bard/bard-plugin/sub_protocol"
 	"errors"
 	"fmt"
 	"net"
@@ -14,9 +15,9 @@ import (
 	Transmission Control SubProtocol
  */
 
-type ReadDoFuncType = func(net.Conn) ([]byte, int)
-type WriteDoFunType = func([]byte) ([]byte, int)
 const DEFAULTTCSPID = "Default"
+// T 作为子协议的symbol name
+const SUBP_SYMBOL_NAME = "T"
 
 var SubProtocol_ZERO = errors.New("No valid SubProtocol Plugin under the folder ")
 
@@ -31,8 +32,8 @@ type TCSPReadDo interface {
 type TCSPWriteDo interface {
 	// @describe 根据协议添加控制信息
 	// @param	[]byte 原自己切片
-	// @return []byte 添加控制信息的切片
-	// @return uint 添加控制信息后切片的长度
+	// @return []byte 添加控制信息后的切片
+	// @return int 添加控制信息后切片的长度
 	WriteDo([]byte) ([]byte, int)
 }
 
@@ -69,7 +70,7 @@ func SubProtocolsFromDir(subProtocolsPath string) (ts *TCSubProtocols, e error) 
 	ts.Init()
 	subprotocolsdir, e := os.Open(subProtocolsPath)
 	if e != nil {
-		Logff("Failed to open folder for plugin: %v", LOG_EXCEPTION, e)
+		Logff("Failed to open folder for sub_protocol plugin: %v", LOG_EXCEPTION, e)
 		return
 	}
 
@@ -84,10 +85,10 @@ func SubProtocolsFromDir(subProtocolsPath string) (ts *TCSubProtocols, e error) 
 		filep := filepath.Join(subProtocolsPath, name)
 		pfile, e := plugin.Open(filep)
 		if e != nil {
-			Logff("Filename: %s,Failed to open plugin: %v", LOG_WARNING, name, e)
+			Logff("Filename: %s,Failed to open sub_protocol plugin: %v", LOG_WARNING, name, e)
 			continue
 		}
-		symbol, e := pfile.Lookup(SYMBOL_NAME)
+		symbol, e := pfile.Lookup(SUBP_SYMBOL_NAME)
 		if e != nil {
 			Logff("Filename: %s, Failed to Lookup symbol: %v", LOG_WARNING, name, e)
 			continue
@@ -95,10 +96,10 @@ func SubProtocolsFromDir(subProtocolsPath string) (ts *TCSubProtocols, e error) 
 		// 这时拿到插件要告诉我们的信息了
 		if IP, ok := symbol.(TCSubProtocol); ok {
 			ts.Register(IP)
-			fmt.Printf("load plugin %s\n", name)
+			fmt.Printf("load sub_protocol plugin %s\n", name)
 			continue
 		} else {
-			Logff("Filename: %s, Failed to register plugin", LOG_WARNING, name)
+			Logff("Filename: %s, Failed to register sub_protocol plugin", LOG_WARNING, name)
 		}
 	}
 
@@ -108,30 +109,7 @@ func SubProtocolsFromDir(subProtocolsPath string) (ts *TCSubProtocols, e error) 
 		e = nil
 	}
 	return
-}
 
-// 可以通过组合AssembleTCSP来拓展它
-type AssembleTCSP struct {
-	readDo ReadDoFuncType
-	writeDo WriteDoFunType
-}
-
-func (a *AssembleTCSP)ID() string {
-	return DEFAULTTCSPID
-}
-
-// 将do注册如AssembleTCSP
-func (a *AssembleTCSP)RegisterDo(do1 ReadDoFuncType, do2 WriteDoFunType) {
-	a.readDo = do1
-	a.writeDo = do2
-}
-
-func (a *AssembleTCSP)ReadDo(conn net.Conn) ([]byte, int) {
-	return a.readDo(conn)
-}
-
-func (a *AssembleTCSP)WriteDo(bs []byte) ([]byte, int) {
-	return a.writeDo(bs)
 }
 
 // 一个默认的TCSubProtocol的Do函数
@@ -159,9 +137,9 @@ func DefaultTCSPWriteDo(bs []byte) ([]byte, int) {
 }
 
 // 提供默认的控制子协议
-var DefaultTCSP = &AssembleTCSP{
-	readDo:  DefaultTCSPReadDo,
-	writeDo: DefaultTCSPWriteDo,
-}
-
+var DefaultTCSP = sub_protocol.NewAssembleTCSP(
+	DEFAULTTCSPID,
+	DefaultTCSPReadDo,
+	DefaultTCSPWriteDo,
+)
 

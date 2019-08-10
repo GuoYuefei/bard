@@ -23,7 +23,7 @@ users:
     com_config:
       plugins:
         - base
-      TCSP: Default
+      TCSP: test
   - username: bard2
     password: bard21234
 
