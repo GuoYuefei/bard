@@ -2,7 +2,8 @@ package main
 
 import (
 	"bard/bard"
-	cPlugin "bard/client/plugin"
+	WP "bard/client/win_plugin"
+	WT "bard/client/win_sub_protocol"
 	"bufio"
 	"fmt"
 	"net"
@@ -12,18 +13,19 @@ import (
 const (
 	ConfigPath = "./client/debug/config/config.yml"
 	PluginDir = "./client/debug/plugins"
+	SubProtocolDir = "./client/debug/sub_protocols"
 )
 
 func main() {
 	config := doConfig()
-	plugin := doPlugin()
-
-	socksSever(config, plugin)
+	plugins := doPlugin()
+	TCSubProtocols := doTCSubProtocol()
+	socksSever(config, plugins, TCSubProtocols)
 
 }
 
 // socks5协议接受消息，但是不进行转发，而是交由另个协程发给我们自己的远程代理主机
-func socksSever(config *bard.Config, plugin bard.IPlugin) {
+func socksSever(config *bard.Config, plugins *bard.Plugins, protocols *bard.TCSubProtocols) {
 	listener, err := net.Listen("tcp", config.LocalAddress+":"+config.LocalPortString())
 	if err != nil {
 		//log.Fatalln(err)
@@ -41,19 +43,20 @@ func socksSever(config *bard.Config, plugin bard.IPlugin) {
 		}
 
 		conn := bard.NewConnTimeout(netconn, config.Timeout)
-		go localServerHandleConn(conn, config, plugin)
+		go localServerHandleConn(conn, config, plugins, protocols)
 
 	}
 }
 
 // 设定的时候权限认证只保留不认证一种方式
-func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugin bard.IPlugin) {
+func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugins *bard.Plugins, protocols *bard.TCSubProtocols) {
 
 	// 默认是4k，调高到6k
 	r := bufio.NewReaderSize(localConn, bard.BUFSIZE)
 
 	// 握手可以复用 包括Auth过程
-	err := bard.ServerHandShake(r, localConn, config)
+	// 客户端不需要在本地连接时无需加入通讯配置，而应该是一个正常的socks5客户端
+	err, _ := bard.ServerHandShake(r, localConn, config)
 
 	if err != nil { // 认证失败也会返回错误哦
 		return
@@ -69,9 +72,7 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugin bar
 	}
 	bard.Deb.Printf("客户端得到的完整的地址是：%s", pcq)
 
-	// todo 请求成功的回复由远程服务器端给结果 由本地服务器修改部分内容发送  这个部分的回复应该由client的DealLocalConn负责
-
-	client, err := bard.NewClient(localConn, pcq, config, plugin)
+	client, err := bard.NewClient(localConn, pcq, config, plugins, protocols)
 	if err != nil || client.PCRsp.Rep != 0x00 {
 		if err != nil {
 			bard.Deb.Println(err)
@@ -82,7 +83,6 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugin bar
 		return
 	}
 
-	// todo udp通道部分应该是由哪里负责？  			给client负责
 
 	client.Pipe()
 
@@ -102,28 +102,50 @@ func doConfig() (config *bard.Config) {
 	return
 }
 
-func doPlugin() bard.IPlugin {
+func doPlugin() *bard.Plugins {
 	if runtime.GOOS == "windows" {
 		return winPlugin()
 	}
 	return otherPlugin()
 }
 
-func otherPlugin() bard.IPlugin {
+func otherPlugin() *bard.Plugins {
 	ps, err := bard.PluginsFromDir(PluginDir)
 	if err != nil {
 		// 上面函数已有错误处理
 		return nil
 	}
-	plugin := ps.ToBigIPlugin()
-	return plugin
+	//plugin := ps.ToBigIPlugin()
+	return ps
 }
 
 // todo 以后记得解决
 //  windows go语言还不支持插件编译，不知道以后支不支持，暂行方案，直接一起编译把
-func winPlugin() bard.IPlugin {
-	ps := cPlugin.WinPlugins()
-	return ps.ToBigIPlugin()
+func winPlugin() *bard.Plugins {
+	ps := WP.WinPlugins()
+	return ps
+}
+
+func doTCSubProtocol() *bard.TCSubProtocols {
+	var protocols *bard.TCSubProtocols
+	if runtime.GOOS == "windows" {
+		// windows
+		protocols = WT.WinSubProtocols()
+	} else {
+		var e error
+		// 这是unix-like
+		protocols, e = bard.SubProtocolsFromDir(SubProtocolDir)
+		if e == bard.SubProtocol_ZERO {
+			bard.Deb.Println(e)
+		} else if e != nil {
+			bard.Logln(e)
+		}
+	}
+	// 整合Default
+	protocols.Register(bard.DefaultTCSP)
+
+	return protocols
+
 }
 
 

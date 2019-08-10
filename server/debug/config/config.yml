@@ -17,14 +17,19 @@ users:
   -
     username: bard
     password: bard1234
+    com_config:
+      plugins:
+        - base
+      TCSP: Default
   -
     username: bard2
     password: bard21234
 
-# 全局plugin配置
-plugins:
-  - base
-TCSP: default
+# 全局通讯配置
+com_config:
+  plugins:
+    - base
+  TCSP: Default
 
 ## Debugging Open Switch and Switch of Logging System
 ## default： false

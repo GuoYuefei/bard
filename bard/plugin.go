@@ -15,7 +15,7 @@ import (
 
 // !!!强制规定，所有插件都必须以V作为Symbol Name暴露出来
 const (
-	SYMBOL_NAME = "V"
+	PLUGIN_SYMBOL_NAME = "V"
 )
 
 var END_FLAG = []byte{0xff}				// 默认bigplugin的EndCam返回内容。表示不作处理
@@ -26,7 +26,7 @@ const (
 	RECEIVE = false
 )
 
-var PLUGIN_ZERO = errors.New("No valid plugins under the folder")
+var PLUGIN_ZERO = errors.New("No valid plugins under the folder ")
 
 type IPluFun func([]byte, bool) ([]byte, int)
 
@@ -263,6 +263,9 @@ func (p *Plugins) Register(plugin IPlugin) {
 // 根据给出的ids返回小型的plugins
 // 如果ids中有p不存在的，那么第二个返回值返回false， 否则为true
 func (p *Plugins) FindByIDs(ids []string) (*Plugins, bool) {
+	if ids == nil {
+		return nil, true
+	}
 	ps := &Plugins{}
 	ps.Init()
 	for _, id := range ids {
@@ -301,7 +304,7 @@ func PluginsFromDir(pluginDir string) (ps *Plugins, e error) {
 			Logff("Filename: %s,Failed to open plugin: %v", LOG_WARNING, name, e)
 			continue
 		}
-		symbol, e := pfile.Lookup(SYMBOL_NAME)
+		symbol, e := pfile.Lookup(PLUGIN_SYMBOL_NAME)
 		if e != nil {
 			Logff("Filename: %s, Failed to Lookup symbol: %v", LOG_WARNING, name, e)
 			continue

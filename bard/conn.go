@@ -16,21 +16,28 @@ type Conn struct {
 	net.Conn
 	timeout time.Duration
 	plugin IPlugin
+	protocol TCSubProtocol
 }
 
 func NewConn(conn net.Conn) *Conn {
-	c := &Conn{conn, 0, nil}
+	c := &Conn{conn, 0, nil, nil}
 	return c
 }
 
 func NewConnTimeout(conn net.Conn, timeout int) *Conn {
-	c := &Conn{conn, 0, nil}
+	c := &Conn{conn, 0, nil, nil}
 	c.SetTimeout(timeout)
 	return c
 }
 
-func (c *Conn) Register(plugin IPlugin) {
+// 该注册方式是覆盖型的
+func (c *Conn) Register(plugin IPlugin, protocol TCSubProtocol) {
 	c.plugin = plugin
+	c.protocol = protocol
+}
+
+func (c *Conn) Protocol() TCSubProtocol {
+	return c.protocol
 }
 
 func (c *Conn) Plugin() IPlugin {
@@ -61,11 +68,23 @@ func (c *Conn) SetDeadline(t time.Time) error {
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
+
+	var writeDo = func(blen int, resp []byte) ([]byte, int) {
+		// 在加密和混淆之间加入自定义的控制信息，主要需要知道加密数据块的长度
+		resp, n = c.protocol.WriteDo(resp)
+		addlen := n - blen
+		return resp, addlen
+	}
+
+
 	var resp []byte = b
 	var addlen = 0
 	blen := len(b)
 	p := c.plugin
 	if p == nil {
+		if c.protocol != nil {
+			resp, addlen = writeDo(blen, resp)
+		}
 		goto Write
 	}
 	/**
@@ -76,9 +95,7 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	resp, n = p.AntiSniffing(resp, SEND)
 	addlen = n - blen
 
-	// 在加密和混淆之间加入自定义的控制信息，主要需要知道加密数据块的长度
-	resp, n = DefaultTCSP.WriteDo(resp[0:n])
-	addlen = n - blen
+	resp, addlen = writeDo(blen, resp[0:n])
 
 	// 处理添加混淆内容
 	resp, n = p.Camouflage(resp, SEND)
@@ -110,7 +127,8 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	p := c.plugin
 	// 处理摘除混淆
 	sep := p.EndCam()
-	if len(sep)!=1 || sep[0] != 0xff {
+	// 如果为默认EndCam就不做处理
+	if len(sep)!=1 || sep[0] != END_FLAG[0] {
 		_, err := getWriterBlock(c.Conn, sep)
 
 		if err != nil {
@@ -118,37 +136,14 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 		}
 	}
 
-
-	//fmt.Printf("混淆报头%d：%s\n", len(temp), temp)
-	//_, n = p.Camouflage(temp, RECEIVE)
-	//fmt.Println("数据块大小：", n)
-
-	_, n = DefaultTCSP.ReadDo(c.Conn)
+	_, n = c.protocol.ReadDo(c.Conn)
 
 	n, err = ReadFull(c.Conn, b[:n])
 
-	//nr, err := c.Conn.Read(b[:n])
-	//for nr != n {
-	//	// 如果数据还没完全到达   先让本协程让出时间片 等待一会再读取
-	//	runtime.Gosched()
-	//	i, err := c.Conn.Read(b[nr:n])
-	//
-	//	if err != nil {
-	//		return  nr, err
-	//	}
-	//	nr += i
-	//}
-
-	//fmt.Println(nr)
 	_ = c.SetDeadline(c.GetDeadline())
-
-	//fmt.Println("get c:")
-	//fmt.Printf("%s\n", b[:n])
-	//fmt.Println("-----1-------",n)
 
 	// 处理tcp上的数据负载
 	_, n = p.AntiSniffing(b[0:n], RECEIVE)
-	//fmt.Println("-------收到ca：\t"+string(b[0:n]))
 
 	return
 }
