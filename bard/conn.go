@@ -2,6 +2,7 @@ package bard
 
 import (
 	"bytes"
+	"errors"
 	"net"
 	"runtime"
 	"time"
@@ -9,6 +10,8 @@ import (
 
 const (
 	TIMEOUT = 180			// 这个包默认的timeout取3分钟
+	//ReadFullMaxTimes = 100000000
+	WaitTimes = 10
 )
 
 // 该类型实现net.conn接口
@@ -136,7 +139,12 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 		}
 	}
 
+	// io.EOF会返回[0,0], 0. 其他错误nil， 0
 	_, n = c.protocol.ReadDo(c.Conn)
+
+	if n == 0 {
+		return 0, errors.New("read package len error or io.EOF")
+	}
 
 	n, err = ReadFull(c.Conn, b[:n])
 
@@ -144,6 +152,10 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 
 	// 处理tcp上的数据负载
 	_, n = p.AntiSniffing(b[0:n], RECEIVE)
+
+	if err != nil {
+		Logf("ReadFull err: %s\n", err)
+	}
 
 	return
 }
@@ -197,21 +209,28 @@ func getWriterBlock1(conn net.Conn) ([]byte, error) {
 
 // 出错 or 读满bs结束
 func ReadFull(conn net.Conn, bs []byte) (n int, err error) {
+	//var times = 0
 	lens := len(bs)
-	n = 0
+	var i = 0
+	//  && times < ReadFullMaxTimes
 	for n != lens {
-		i, err := conn.Read(bs[n:])
+		//times++
+		i, err = conn.Read(bs[n:])
 		n += i
 		if err != nil {
-			return n, err
+			break
 		}
+
 		if n == lens {
-			return n, nil
+			break
 		}
-		// 没读取完就让出时间片等下在读
-		runtime.Gosched()
+
+		// 没读取完就让出时间片等下读
+		for i := 0; i < WaitTimes; i++ {
+			runtime.Gosched()
+		}
 	}
-	return lens, nil
+	return n, err
 }
 
 func ReadByteAppend(conn net.Conn, source []byte) ([]byte, error) {
@@ -220,15 +239,7 @@ func ReadByteAppend(conn net.Conn, source []byte) ([]byte, error) {
 	if err != nil {
 		return source, err
 	}
-	//n, err := conn.Read(temp)
-	//if err != nil {
-	//	//
-	//	return source
-	//}
-	//for n != 1 {
-	//	runtime.Gosched()
-	//	n, err = conn.Read(temp)
-	//}
+
 	bs := append(source, temp...)
 	return bs, nil
 }

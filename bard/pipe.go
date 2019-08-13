@@ -36,17 +36,10 @@ func PipeBuffer(dst io.Writer, src io.Reader, buf []byte, ornament FunOrnament) 
 		buf = make([]byte, size)
 	}
 	for {
-		//var i int = 1
-		//fmt.Println(i)
-		//i++
 		nr, er := src.Read(buf)
 		//fmt.Println(nr)
 		// 数据处理
 		buf, n := ornament(buf[0:nr])
-
-		//if nr != n {
-		//	fmt.Printf("len of data： %d\nadd udp proxy head %v\n", n, buf[0:n])
-		//}
 
 		if nr > 0 {
 			nw, ew := dst.Write(buf[0:n])

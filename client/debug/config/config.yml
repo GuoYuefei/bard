@@ -1,7 +1,7 @@
 # Current server public network IP Or IP for local testing and Port
-server: 47.100.167.83
-# 198.46.183.156
-server_port: 1081
+server: 198.46.183.156
+# 47.100.167.83
+server_port: 9696
 # Discontinuation time after no request
 timeout: 60
 
@@ -23,7 +23,7 @@ users:
     com_config:
       plugins:
         - base
-      TCSP: test
+      TCSP: Default
   - username: bard2
     password: bard21234
 

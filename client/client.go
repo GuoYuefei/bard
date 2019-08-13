@@ -83,6 +83,7 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugins *b
 		return
 	}
 
+	defer client.Close()
 
 	client.Pipe()
 

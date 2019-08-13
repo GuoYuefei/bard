@@ -1,7 +1,6 @@
 package bard
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"net"
@@ -64,7 +63,7 @@ func (p *PCQInfo) Response(conn *Conn, server string) error {
 
 
 func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
-	r := bufio.NewReaderSize(conn, BUFSIZE)
+	//r := bufio.NewReaderSize(conn, BUFSIZE)
 
 	if p.Cmd == REQUEST_TCP {
 
@@ -101,7 +100,7 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			readbuf := make([]byte, ReadBUFSIZE)
 
 			// 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
-			written, e := PipeBuffer(remote, r, readbuf, dealOrnament(RECEIVE, conn.plugin))
+			written, e := PipeBuffer(remote, conn, readbuf, dealOrnament(RECEIVE, conn.plugin))
 			if e != nil {
 				Deb.Printf("从r中写入到remote失败: %v", e)
 			} else {

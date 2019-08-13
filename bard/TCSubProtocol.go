@@ -4,6 +4,7 @@ import (
 	"bard/bard-plugin/sub_protocol"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -117,20 +118,22 @@ func DefaultTCSPReadDo(conn net.Conn) ([]byte, int) {
 	// default len is two byte
 	lslice := make([]byte, 2)
 	_, err := ReadFull(conn, lslice)
-	if err != nil {
+	//fmt.Println("err:", err)
+	if err != nil && err != io.EOF {
+		//fmt.Println("readdo readfull")
 		return nil, 0
 	}
 	// 大端
 	lenh, lenl := int(lslice[0]), int(lslice[1])
 	l := lenh<<8+lenl
-	//fmt.Println(lenh, lenl, l)
+	//fmt.Println("r", lenh, lenl, l)
 	return lslice, l
 }
 
 func DefaultTCSPWriteDo(bs []byte) ([]byte, int) {
 	l := len(bs)
 	lenh, lenl := byte(l>>8), byte(l)
-	//fmt.Println(lenh, lenl)
+	//fmt.Println("w",lenh, lenl,l)
 	lslice := []byte{lenh, lenl}
 	bs = append(lslice, bs...)
 	return bs, len(bs)
