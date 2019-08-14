@@ -83,17 +83,20 @@ func (c *Client)PipeUdp() {
 	// c.RemoteConn 主要是把含有plugin的一个连接传入 此时Packet类型中的client就是远程代理服务器的监听地址了。 因为udp交流是双方是平等的，也可以将远程服务器理解成本udp连接的客户端
 	packet, e := NewPacket(/*c.LocalConn*/c.RemoteConn, localPacket, c.PCRsp.SAddr.PortToInt())
 	if e != nil {
+		Logln(e)
 		return
 	}
 	packet.SetTimeout(c.config.Timeout)
 	if addr, ok := c.LocalConn.RemoteAddr().(*net.TCPAddr); ok {
 		udpAddr, err := net.ResolveUDPAddr("udp", addr.IP.String()+":"+strconv.Itoa(c.PCQI.Dst.PortToInt()))
 		if err != nil {
+			Logln(e)
 			return
 		}
 		packet.AddServer("local", udpAddr)
 	} else {
-		Deb.Println("c.LocalConn.RemoteAddr() is not a TCPAddr")
+		Logln("c.LocalConn.RemoteAddr() is not a TCPAddr")
+		return
 	}
 	wg := new(sync.WaitGroup)
 	wg. Add(2)
@@ -109,7 +112,7 @@ func (c *Client)PipeUdp() {
 			err = packet.ListenToFixedTarget("local")
 			if err != nil {
 				// 记录到日志 可能以后会出现其他错误 如果只是udp关闭的话就是正确的逻辑
-				Slog.Println("packet.listen close:", err)
+				Logln("packet.listen close:", err)
 				close(packet.message)
 				break
 			}

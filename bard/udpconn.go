@@ -52,6 +52,7 @@ type Packet struct {
 	Socks   *Conn						// 插件类型一般是由Socks带入Packet的
 	message chan *UdpMessage
 	Frag    uint8 // udp分段
+	buf map[string] []byte
 }
 
 func (p *Packet) GetDeadline() time.Time {
@@ -76,6 +77,7 @@ func NewPacket(conn *Conn, p *net.UDPConn, cport int) (*Packet, error) {
 	packet.Packet = p
 	packet.Servers = make(map[string]*net.UDPAddr)
 	packet.message = make(chan *UdpMessage, MESSAGESIZE)
+	packet.buf = make(map[string] []byte)
 
 	if addr, ok := caddr.(*net.TCPAddr); ok {
 		packet.Client, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr.IP, cport))
@@ -112,7 +114,7 @@ func (p *Packet) Request() (n int, err error) {
 func (p *Packet) Listen() error {
 
 	var message = &UdpMessage{}
-	var buf = make([]byte, BUFSIZE)
+	var buf = make([]byte, ReadBUFSIZE)
 
 	nr, addr, err := p.ReadFrom(buf)
 	if err != nil {
@@ -133,9 +135,13 @@ func (p *Packet) Listen() error {
 		if p.Client.String() != uaddr.String() {
 			p.Client = uaddr //改变p.client的port
 		}
-		// endtodo 消息来自客户端就需要进行解密
+		// node 1 消息来自客户端就需要进行解密 解密就可能存在多余数据或者少数据的情况，这时候就需要用p.buf将其存起来
 		if p.Socks.plugin != nil {
-			_, nr = p.Socks.plugin.Ornament(buf[0:nr], RECEIVE)
+			//_, nr = p.Socks.plugin.Ornament(buf[0:nr], RECEIVE)
+			buf, nr = p.Decode(buf[0:nr], addr)
+			if nr == 0 {
+				return nil
+			}
 		}
 		reader := bufio.NewReader(bytes.NewReader(buf[0:nr]))
 		// 客户端发来的消息
@@ -144,6 +150,7 @@ func (p *Packet) Listen() error {
 			Deb.Println(err)
 			return err
 		}
+		fmt.Println(udpreqs)
 		// 如果原本远程servers列表存在该远程主机，就直接提取
 		if dst, ok := p.Servers[udpreqs.String()]; ok {
 			message.dst = dst
@@ -189,9 +196,10 @@ func (p *Packet) Listen() error {
 				head = append(head, uint8(src.Port>>8), uint8(src.Port))
 				data = append(head, data...)
 
-				// endtodo 数据要加密 对于远程主机发来的消息就应该加密发送给客户端 虽然可能插件不一定存在加密过程
+				// node 2 数据要加密 对于远程主机发来的消息就应该加密发送给客户端 虽然可能插件不一定存在加密过程
 				if p.Socks.plugin != nil {
-					data, _ = p.Socks.plugin.Ornament(data, SEND)
+					//data, _ = p.Socks.plugin.Ornament(data, SEND)
+					data, _ = p.Encode(data)
 				}
 
 				return data, len(data)
@@ -233,10 +241,14 @@ func (p *Packet) ListenToFixedTarget(serverKey string) error {
 	uaddr, _ = addr.(*net.UDPAddr)
 	if uaddr.String() == p.Client.String() {
 		// 是远程代理服务器发来的消息 此时远程代理服务器在客户端看来它就是一个客户端
-		// 远程代理服务器发来的消息需要解密
+		// node 3 远程代理服务器发来的消息需要解密
 		if p.Socks.plugin != nil {
 			// 这里的RECEIVE都是本软件的客户端和服务器端的相对关系，与其他软件不相关
-			_, nr = p.Socks.plugin.Ornament(buf[0:nr], RECEIVE)
+			//_, nr = p.Socks.plugin.Ornament(buf[0:nr], RECEIVE)
+			buf, nr = p.Decode(buf[0:nr], addr)
+			if nr == 0 {
+				return nil
+			}
 		}
 		if src, ok := p.Servers[serverKey]; ok {
 			message.dst = src
@@ -260,9 +272,11 @@ func (p *Packet) ListenToFixedTarget(serverKey string) error {
 			message.dst = p.Client
 			Deb.Printf("Processing UDP messages from client host %s", src)
 
+			// node 4 客户端来的消息应该要加密
 			if p.Socks.plugin != nil {
 				// 这里的RECEIVE都是本软件的客户端和服务器端的相对关系，与其他软件不相关
-				_, nr = p.Socks.plugin.Ornament(buf[0:nr], SEND)
+				//_, nr = p.Socks.plugin.Ornament(buf[0:nr], SEND)
+				buf, nr = p.Encode(buf[0:nr])
 			}
 			message.Data = buf[0:nr]
 
@@ -281,6 +295,76 @@ func (p *Packet) ListenToFixedTarget(serverKey string) error {
 	return err
 }
 
+// @describe 根据p配置内容决定要不要加密， 如果不加密就原样输出
+// @param []byte 原文
+// @return res []byte 密文
+// @return n int 长度
+func (p *Packet) Encode(src []byte) (res []byte, n int) {
+	res, n = src, len(src)
+	if p.Socks.plugin == nil {
+		if p.Socks.protocol != nil {
+			res, n = p.Socks.protocol.WriteDo(res)
+		}
+		return
+	}
+	// 当plugin存在
+
+	if p.Socks.protocol == nil {
+		panic("packet encode: Subprotocols must be configured in the presence of plug-ins")
+	}
+	// 这时候是正常情况
+	res, n = p.Socks.plugin.AntiSniffing(res, SEND)
+	res, n = p.Socks.protocol.WriteDo(res[0:n])
+	return
+}
+
+// node 解密 解密就可能存在多余数据或者少数据的情况，这时候就需要用p.buf将其存起来 当没有plugin时，就不会用到p.buf
+// @describe 根据p配置内容决定要不要解密， 如果不解密就原样输出
+// @param []byte 密文
+// @param net.Addr 密文来源
+// @return res []byte 原文
+// @return n int 长度
+func (p *Packet) Decode(src []byte, addr net.Addr) (res []byte, n int) {
+	res, n = src, len(src)
+
+	if p.Socks.plugin == nil {
+		reader := bytes.NewReader(res)
+		if p.Socks.protocol != nil {
+			// 在无plugin下子协议并无软用
+			_, _ = p.Socks.protocol.ReadDo(reader)
+		}
+		return
+	}
+
+	if p.Socks.protocol == nil {
+		// 在有plugin下，必须配置子协议
+		panic("packet decode: Subprotocols must be configured in the presence of plug-ins")
+	}
+
+	if v, ok := p.buf[addr.String()]; ok {
+		res = append(v, res...)
+		fmt.Println(res)
+
+	}
+	reader := bytes.NewReader(res)
+
+	do, n := p.Socks.protocol.ReadDo(reader)
+	fmt.Println(do, n)
+	dolen := len(do)
+
+	if dolen+n > len(res) {
+		// res 如果超过长度了应该不返回等下次返回
+		p.buf[addr.String()] = res
+		return nil, 0
+	}
+
+	// 如果没超过长度就正常返回
+	p.buf[addr.String()] = res[dolen+n:]
+
+
+	return res[dolen:dolen+n], n
+}
+
 func (p *Packet) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 	n, addr, err = p.Packet.ReadFrom(b)
 
@@ -288,36 +372,11 @@ func (p *Packet) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 		return
 	}
 
-	// endtodo 不加入处理混淆  udp设计时不加入混淆，但是加入加密
-	// todo 处理加密
-	plugin := p.Socks.plugin
-
-	if plugin != nil {
-		uaddr, _ := addr.(*net.UDPAddr)
-		fmt.Println("ip: -------- ", uaddr)
-		if uaddr.IP.String() == p.Client.IP.String() {
-			// 如果是客户端发来的消息就做处理
-			//_, n = plugin.Camouflage(b[0:n], RECEIVE)
-			_, n = plugin.AntiSniffing(b[0:n], RECEIVE)
-		}
-	}
-
 	_ = p.SetDeadline(p.GetDeadline())
 	return
 }
 
 func (p *Packet) WriteTo(b []byte, addr net.Addr) (n int, err error) {
-
-	// todo 处理加密
-	plugin := p.Socks.plugin
-	if plugin != nil {
-		uaddr, _ := addr.(*net.UDPAddr)
-
-		if uaddr.IP.String() == p.Client.IP.String() {
-			// 如果是发送给客户端的就进行加密等动作
-			b, n = plugin.AntiSniffing(b, SEND)
-		}
-	}
 
 	n, err = p.Packet.WriteTo(b, addr)
 	_ = p.SetDeadline(p.GetDeadline())

@@ -114,6 +114,14 @@ Write:
 func (c *Conn) Read(b []byte) (n int, err error) {
 	// 如果没插件那就正常读取
 	if c.plugin == nil {
+		if c.protocol != nil {
+			_, n = c.protocol.ReadDo(c.Conn)
+
+			if n == 0 {
+				return 0, errors.New("read package len error or io.EOF")
+			}
+			// 这里的protocol没有用处（无plugin），仅处理好控制信息，但是对读取信息过程不影响
+		}
 		n, err = c.Conn.Read(b)
 		_ = c.SetDeadline(c.GetDeadline())
 		return
@@ -139,9 +147,14 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 		}
 	}
 
-	// io.EOF会返回[0,0], 0. 其他错误nil， 0
-	_, n = c.protocol.ReadDo(c.Conn)
+	if c.protocol == nil {
+		// 在有plugin下，必须配置子协议
+		panic("conn read: Subprotocols must be configured in the presence of plug-ins")
+	}
 
+	// io.EOF和其他错误[]， 0
+	_, n = c.protocol.ReadDo(c.Conn)
+	//fmt.Println(do, n)
 	if n == 0 {
 		return 0, errors.New("read package len error or io.EOF")
 	}

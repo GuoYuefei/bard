@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"plugin"
@@ -24,10 +23,10 @@ var SubProtocol_ZERO = errors.New("No valid SubProtocol Plugin under the folder 
 
 type TCSPReadDo interface {
 	// @describe 根据协议从conn中读取控制信息
-	// @param conn net.Conn 可以读取的连接
+	// @param conn io.Reader 可以读取的连接
 	// @return []byte 本函数从conn中读取的内容
 	// @return uint 得到接下来数据包的长度
-	ReadDo(conn net.Conn) ([]byte, int)
+	ReadDo(conn io.Reader) ([]byte, int)
 }
 
 type TCSPWriteDo interface {
@@ -114,13 +113,13 @@ func SubProtocolsFromDir(subProtocolsPath string) (ts *TCSubProtocols, e error) 
 }
 
 // 一个默认的TCSubProtocol的Do函数
-func DefaultTCSPReadDo(conn net.Conn) ([]byte, int) {
+func DefaultTCSPReadDo(reader io.Reader) ([]byte, int) {
 	// default len is two byte
 	lslice := make([]byte, 2)
-	_, err := ReadFull(conn, lslice)
-	//fmt.Println("err:", err)
-	if err != nil && err != io.EOF {
-		//fmt.Println("readdo readfull")
+	_, err := io.ReadFull(reader, lslice)
+	//fmt.Println("err:", err)    && err != io.EOF
+	if err != nil {
+		//fmt.Println(err)
 		return nil, 0
 	}
 	// 大端
