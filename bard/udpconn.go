@@ -325,10 +325,11 @@ func (p *Packet) Encode(src []byte) (res []byte, n int) {
 // @return res []byte 原文
 // @return n int 长度
 func (p *Packet) Decode(src []byte, addr net.Addr) (res []byte, n int) {
-	res, n = src, len(src)
+	var temp []byte
+	temp, n = src, len(src)
 
 	if p.Socks.plugin == nil {
-		reader := bytes.NewReader(res)
+		reader := bytes.NewReader(temp)
 		if p.Socks.protocol != nil {
 			// 在无plugin下子协议并无软用
 			_, _ = p.Socks.protocol.ReadDo(reader)
@@ -342,27 +343,28 @@ func (p *Packet) Decode(src []byte, addr net.Addr) (res []byte, n int) {
 	}
 
 	if v, ok := p.buf[addr.String()]; ok {
-		res = append(v, res...)
-		fmt.Println(res)
+		temp = append(v, temp...)
+		//fmt.Println("lalalalallalallaal")
 
 	}
-	reader := bytes.NewReader(res)
+	reader := bytes.NewReader(temp)
 
 	do, n := p.Socks.protocol.ReadDo(reader)
 	fmt.Println(do, n)
 	dolen := len(do)
 
-	if dolen+n > len(res) {
-		// res 如果超过长度了应该不返回等下次返回
-		p.buf[addr.String()] = res
+	if dolen+n > len(temp) {
+		// temp 如果超过长度了应该不返回等下次返回
+		p.buf[addr.String()] = temp
 		return nil, 0
 	}
 
 	// 如果没超过长度就正常返回
-	p.buf[addr.String()] = res[dolen+n:]
+	p.buf[addr.String()] = temp[dolen+n:]
 
+	res, n = p.Socks.plugin.AntiSniffing(temp[dolen:dolen+n], RECEIVE)
 
-	return res[dolen:dolen+n], n
+	return res, n
 }
 
 func (p *Packet) ReadFrom(b []byte) (n int, addr net.Addr, err error) {

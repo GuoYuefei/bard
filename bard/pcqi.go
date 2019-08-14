@@ -146,7 +146,7 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 
 		udpPacket, e := net.ListenUDP("udp", udpaddr)
 		//fmt.Println("p.dst.port", p.Dst.PortToInt())
-		//fmt.Println(udpPacket.LocalAddr())
+		fmt.Println(udpPacket.LocalAddr())
 
 		if e != nil {
 			Logff(ExceptionUDPChannelOpen.Error()+"%v", LOG_WARNING, e)

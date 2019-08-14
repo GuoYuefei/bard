@@ -59,7 +59,7 @@ func (c *Client)Pipe() {
 func (c *Client)PipeUdp() {
 	// do something with udp channel
 	//remoteUdpAddr, err := net.ResolveUDPAddr("udp", c.PCRsp.SAddr.AddrString())
-	localUdpAddr, err := net.ResolveUDPAddr("udp", c.config.GetLocalString()+":"+
+	localUdpAddr, err := net.ResolveUDPAddr("udp", ":"+
 														strconv.Itoa(c.PCQI.Dst.PortToInt()+2))
 	if err != nil {
 		Deb.Println("UDP parse error,", err)
