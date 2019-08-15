@@ -98,8 +98,8 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			// 从客户端读出的数据可能超错BUFSIZE
 			readbuf := make([]byte, ReadBUFSIZE)
 
-			// 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
-			written, e := PipeBuffer(remote, conn, readbuf, dealOrnament(RECEIVE, conn.plugin))
+			// 废弃 | 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
+			written, e := PipeBuffer(remote, conn, readbuf, nil/*dealOrnament(RECEIVE, conn.plugin)*/)
 			if e != nil {
 				Deb.Printf("从r中写入到remote失败: %v", e)
 			} else {
@@ -114,8 +114,8 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 
 		go func() {
 			defer wg.Done()
-			// 从远程主机那获取内容是明文（我方没加密）， 所以需要对其加密发送给客户端
-			written, e := Pipe(conn, remote, dealOrnament(SEND, conn.plugin))
+			// 废弃 | 从远程主机那获取内容是明文（我方没加密）， 所以需要对其加密发送给客户端
+			written, e := Pipe(conn, remote, nil/*dealOrnament(SEND, conn.plugin)*/)
 			if e != nil {
 				Deb.Printf("从remote中写入到r失败: %v", e)
 			} else {

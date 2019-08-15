@@ -150,7 +150,7 @@ func (c *Client)PipeTcp() {
 	}
 	go func() {
 		defer wg.Done()
-		written, e := Pipe(c.RemoteConn, c.LocalConn, dealOrnament(SEND, c.RemoteConn.Plugin()))
+		written, e := Pipe(c.RemoteConn, c.LocalConn, nil/*dealOrnament(SEND, c.RemoteConn.Plugin())*/)
 		if e != nil {
 			Deb.Printf("LocalConn -> RemoteConn失败: %v", e)
 		} else {
@@ -168,7 +168,7 @@ func (c *Client)PipeTcp() {
 		// 远程服务器发来的消息可能超过BUFSIZE，因为加过修饰
 		Readbuf := make([]byte, ReadBUFSIZE)
 
-		written, e := PipeBuffer(c.LocalConn, c.RemoteConn, Readbuf, dealOrnament(RECEIVE, c.RemoteConn.Plugin()))
+		written, e := PipeBuffer(c.LocalConn, c.RemoteConn, Readbuf, nil/*dealOrnament(RECEIVE, c.RemoteConn.Plugin())*/)
 		if e != nil {
 			Deb.Printf("RemoteConn -> LocalConn失败: %v", e)
 		} else {
