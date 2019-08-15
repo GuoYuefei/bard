@@ -86,7 +86,7 @@ func ServerHandShake(r *bufio.Reader, conn net.Conn, config *Config) (error, *Co
 		Logf("Connection request from client IP %v, permission authentication failed", conn.RemoteAddr())
 	}
 
-	// endtodo 丢弃缓冲区中所有内容，准备下轮对话
+	// 丢弃缓冲区中所有内容，准备下轮对话
 	r.Reset(conn)
 	_, err = conn.Write(resp)
 	if err != nil {
@@ -127,7 +127,7 @@ func CommConfigRegisterToConn(conn *Conn, config *CommConfig, plugins *Plugins, 
 		}
 	}
 
-	// node 只有配置了传输控制子协议才能注册
+	// 只有配置了传输控制子协议才能注册
 	if protocol != nil {
 		if len(ps.Pmap) != 0 {
 			conn.Register(ps.ToBigIPlugin(), protocol)

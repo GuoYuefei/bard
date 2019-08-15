@@ -1,7 +1,7 @@
 # Current server public network IP Or IP for local testing and Port
-server: 198.46.183.156
-# 47.100.167.83
-server_port: 9696
+server: 47.100.167.83
+# 198.46.183.156
+server_port: 1081
 # Discontinuation time after no request
 timeout: 60
 

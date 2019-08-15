@@ -2,7 +2,6 @@ package bard
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"strconv"
 	"sync"
@@ -49,7 +48,7 @@ func (p *PCQInfo) Response(conn *Conn, server string) error {
 		// 主要响应socks5最后的请求 cmd 为udp
 		// 服务器端server 一般只有一个ip todo 先别管多IP吧 而且还只支持ipv4
 		var ip = net.ParseIP(server)
-		fmt.Println("ip is .............", ip.To4())
+		//fmt.Println("ip is .............", ip.To4())
 		// 遵照回应udp的写法
 		resp = append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
 		resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)

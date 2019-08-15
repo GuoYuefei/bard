@@ -69,7 +69,7 @@ func remoteServerHandleConn(conn *bard.Conn, config *bard.Config, plugins *bard.
 		return
 	}
 
-	// node 客户端在收到认证成功消息后就应该使用其通讯插件进行通讯 只有配置了相同的插件接下来的通讯才会有"共同语言"，才会成功进行
+	// 客户端在收到认证成功消息后就应该使用其通讯插件进行通讯 只有配置了相同的插件接下来的通讯才会有"共同语言"，才会成功进行
 
 	pcq, err := bard.ReadPCQInfo(r)
 	if err != nil {
@@ -113,7 +113,8 @@ func doPlugin() *bard.Plugins {
 	ps, err := bard.PluginsFromDir(PluginDir)
 	if err != nil {
 		// 上面函数已有错误处理
-		return nil
+		ps = &bard.Plugins{}
+		ps.Init()
 	}
 	//plugin := ps.ToBigIPlugin()
 	return ps
