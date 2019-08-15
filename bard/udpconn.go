@@ -135,7 +135,7 @@ func (p *Packet) Listen() error {
 		if p.Client.String() != uaddr.String() {
 			p.Client = uaddr //改变p.client的port
 		}
-		// node 1 消息来自客户端就需要进行解密 解密就可能存在多余数据或者少数据的情况，这时候就需要用p.buf将其存起来
+		// endtodo 1 消息来自客户端就需要进行解密 解密就可能存在多余数据或者少数据的情况，这时候就需要用p.buf将其存起来
 		if p.Socks.plugin != nil {
 			//_, nr = p.Socks.plugin.Ornament(buf[0:nr], RECEIVE)
 			buf, nr = p.Decode(buf[0:nr], addr)
@@ -150,7 +150,7 @@ func (p *Packet) Listen() error {
 			Deb.Println(err)
 			return err
 		}
-		fmt.Println(udpreqs)
+		//fmt.Println(udpreqs)
 		// 如果原本远程servers列表存在该远程主机，就直接提取
 		if dst, ok := p.Servers[udpreqs.String()]; ok {
 			message.dst = dst
@@ -196,7 +196,7 @@ func (p *Packet) Listen() error {
 				head = append(head, uint8(src.Port>>8), uint8(src.Port))
 				data = append(head, data...)
 
-				// node 2 数据要加密 对于远程主机发来的消息就应该加密发送给客户端 虽然可能插件不一定存在加密过程
+				// endtodo 2 数据要加密 对于远程主机发来的消息就应该加密发送给客户端 虽然可能插件不一定存在加密过程
 				if p.Socks.plugin != nil {
 					//data, _ = p.Socks.plugin.Ornament(data, SEND)
 					data, _ = p.Encode(data)
@@ -241,7 +241,7 @@ func (p *Packet) ListenToFixedTarget(serverKey string) error {
 	uaddr, _ = addr.(*net.UDPAddr)
 	if uaddr.String() == p.Client.String() {
 		// 是远程代理服务器发来的消息 此时远程代理服务器在客户端看来它就是一个客户端
-		// node 3 远程代理服务器发来的消息需要解密
+		// endtodo 3 远程代理服务器发来的消息需要解密
 		if p.Socks.plugin != nil {
 			// 这里的RECEIVE都是本软件的客户端和服务器端的相对关系，与其他软件不相关
 			//_, nr = p.Socks.plugin.Ornament(buf[0:nr], RECEIVE)
@@ -272,7 +272,7 @@ func (p *Packet) ListenToFixedTarget(serverKey string) error {
 			message.dst = p.Client
 			Deb.Printf("Processing UDP messages from client host %s", src)
 
-			// node 4 客户端来的消息应该要加密
+			// endtodo 4 客户端来的消息应该要加密
 			if p.Socks.plugin != nil {
 				// 这里的RECEIVE都是本软件的客户端和服务器端的相对关系，与其他软件不相关
 				//_, nr = p.Socks.plugin.Ornament(buf[0:nr], SEND)
@@ -318,7 +318,7 @@ func (p *Packet) Encode(src []byte) (res []byte, n int) {
 	return
 }
 
-// node 解密 解密就可能存在多余数据或者少数据的情况，这时候就需要用p.buf将其存起来 当没有plugin时，就不会用到p.buf
+// endtodo 解密 解密就可能存在多余数据或者少数据的情况，这时候就需要用p.buf将其存起来 当没有plugin时，就不会用到p.buf
 // @describe 根据p配置内容决定要不要解密， 如果不解密就原样输出
 // @param []byte 密文
 // @param net.Addr 密文来源
@@ -344,13 +344,11 @@ func (p *Packet) Decode(src []byte, addr net.Addr) (res []byte, n int) {
 
 	if v, ok := p.buf[addr.String()]; ok {
 		temp = append(v, temp...)
-		//fmt.Println("lalalalallalallaal")
-
 	}
 	reader := bytes.NewReader(temp)
 
 	do, n := p.Socks.protocol.ReadDo(reader)
-	fmt.Println(do, n)
+	//fmt.Println(do, n)
 	dolen := len(do)
 
 	if dolen+n > len(temp) {

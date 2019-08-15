@@ -75,9 +75,9 @@ func localServerHandleConn(localConn *bard.Conn, config *bard.Config, plugins *b
 	client, err := bard.NewClient(localConn, pcq, config, plugins, protocols)
 	if err != nil || client.PCRsp.Rep != 0x00 {
 		if err != nil {
-			bard.Deb.Println(err)
+			bard.Logln(err)
 		} else {
-			bard.Deb.Println("refused by remote server")
+			bard.Logln("refused by remote server")
 		}
 		bard.RefuseRequest(localConn)
 		return

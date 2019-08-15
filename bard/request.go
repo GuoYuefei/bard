@@ -21,9 +21,9 @@ type Client struct {
 	LocalConn *Conn
 	//CSMessage chan *Message
 
-	PCQI *PCQInfo					// node 这是LocalConn得到的请求 这个内容其实只要原封不动传给远程代理就行
+	PCQI *PCQInfo					// 这是LocalConn得到的请求 这个内容其实只要原封不动传给远程代理就行
 	// todo 以下addr需要改成PCRspInfo类型
-	PCRsp *PCRspInfo			// node 这是RemoteConn远程服务器发回的响应	服务器返回响应，仅udp代理时有用,先不考虑udp
+	PCRsp *PCRspInfo			// 这是RemoteConn远程服务器发回的响应	服务器返回响应，仅udp代理时有用
 
 	//SCMessage chan *Message
 	RemoteConn *Conn
@@ -62,20 +62,20 @@ func (c *Client)PipeUdp() {
 	localUdpAddr, err := net.ResolveUDPAddr("udp", ":"+
 														strconv.Itoa(c.PCQI.Dst.PortToInt()+2))
 	if err != nil {
-		Deb.Println("UDP parse error,", err)
+		Logln("UDP addr parse error,", err)
 		return
 	}
 	// node 这个udpPacket是客户端处理一个udp连接时的唯一通道，包括与客户端的客户端通讯和客户端的服务器端
 	localPacket, err := net.ListenUDP("udp", localUdpAddr)
 	if err != nil {
-		Deb.Println(err)
+		Logln(err)
 		RefuseRequest(c.LocalConn)
 		return
 	}
 	err = c.PCQI.Response(c.LocalConn, c.config.GetLocalString())
 
 	if err != nil {
-		Deb.Println(err)
+		Logln(err)
 		//RefuseRequest(c.LocalConn)			// 没回复成功成功，不知要不要回复失败，因为可能回复失败也失败
 		return
 	}
@@ -129,7 +129,7 @@ func (c *Client)PipeUdp() {
 			}
 			_, err = packet.Request()
 			if err != nil {
-				Slog.Println("packet.request close:", err)
+				Logln("packet.request close:", err)
 				break
 			}
 		}
@@ -143,7 +143,7 @@ func (c *Client)PipeTcp() {
 	wg.Add(2)
 	e := c.PCQI.Response(c.LocalConn, c.config.GetLocalString())
 	if e != nil {
-		Deb.Println(e)
+		Logln(e)
 		c.Close()
 		wg.Done(); wg.Done()			// 发生错误还需要解锁的
 		return
@@ -190,7 +190,6 @@ func (c *Client)PipeTcp() {
 /**
 	定义Client的能力
 	1、可以根据配置文件连接远程代理服务器，做到第一次握手
-	2、初始化两个Message的通道
 	-------------以上应该在初始化时完成----------------
 	3、两个conn各自对自己的通道操作。 每个函数2协程
 	4、外层调用，开两个协程。 over 一共一次连接7协程
@@ -199,6 +198,8 @@ func (c *Client)PipeTcp() {
 	@param localConn 一定要是已经建立起本地socks5连接的conn
 	@param pcqi 是localConn接收到的请求信息
 	@param config 配置文件信息
+	@param plugins 插件信息集
+	@param protocols 子协议集
 */
 func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config, plugins *Plugins, protocols *TCSubProtocols) (c *Client, err error){
 	c = &Client{}
@@ -257,7 +258,7 @@ func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo, con
 
 	if b != SocksVersion {
 		e = ErrorSocksVersion
-		Deb.Println("version byte is", b)
+		//Deb.Println("version byte is", b)
 		return
 	}
 	method, e := r.ReadByte()
@@ -278,7 +279,7 @@ func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo, con
 	}
 	r.Reset(conn)			// 清空缓存
 
-	// node 在发送请求前需要重新注册通讯配置信息
+	// 在发送请求前需要重新注册通讯配置信息
 	ok := CommConfigRegisterToConn(conn, config.Users[0].ComConfig, plugins, protocols)
 	if !ok {
 		e = errors.New("User Communication Configuration Not Found! ")
