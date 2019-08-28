@@ -1,10 +1,27 @@
 package bard
 
 import (
+	"errors"
 	"fmt"
 	"net"
 )
 
+// @param ip
+// @return []byte ip代表的字节数组
+// @return int IPV4(0x01) or IPV6(0x04),代表该ip是什么类型 0x00错误时返回
+// @return error 错误返回
+func IpToBytes(ip net.IP) ([]byte, byte, error){
+	srcip := ip.To4()
+	srcipType := IPV4
+	if srcip == nil {
+		srcip = ip.To16()
+		srcipType = IPV6
+		if srcip == nil {
+			return nil, 0x00 ,errors.New("Address error IP cannot be parsed into version 4 or 6 ")
+		}
+	}
+	return srcip, srcipType, nil
+}
 
 type UDPAddress struct {
 	*Address
@@ -56,5 +73,10 @@ func (a *Address) AddrString() string {
 
 func (a *Address) String() string {
 
-	return fmt.Sprintf("%s:%d", a.AddrString(), a.PortToInt())
+	if a.Atyp == IPV6 {
+		// ipv6 需要写成这样[ipv6]:port
+		return fmt.Sprintf("[%s]:%d", a.AddrString(), a.PortToInt())
+	} else {
+		return fmt.Sprintf("%s:%d", a.AddrString(), a.PortToInt())
+	}
 }

@@ -37,6 +37,7 @@ func (p *PCQInfo) ToBytes() []byte {
 	return append([]byte{p.Ver, p.Cmd, 0x00}, p.Dst.ToProtocol()...)
 }
 
+// @param server ip的字符串,
 func (p *PCQInfo) Response(conn *Conn, server string) error {
 	var resp []byte
 	if p.Cmd == REQUEST_TCP {
@@ -48,16 +49,23 @@ func (p *PCQInfo) Response(conn *Conn, server string) error {
 		// 主要响应socks5最后的请求 cmd 为udp
 		// 服务器端server 一般只有一个ip todo 先别管多IP吧 而且还只支持ipv4
 		var ip = net.ParseIP(server)
-		//fmt.Println("ip is .............", ip.To4())
+
+		// ipv6实现
+		ipBytes, ipType, err := IpToBytes(ip)
+		if err != nil {
+			return err
+		}
+
 		// 遵照回应udp的写法
-		resp = append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
+		resp = append([]byte{0x05, 0x00, 0x00, ipType}, ipBytes...)
+
+		// todo udp端口这边其实还有问题，没统一，在开启端口的时候可能与通知udp端口不相同（概率极低）
 		resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)
 		Deb.Println("告诉客户端我监听的udp端口：", p.Dst.Port )
 	}
 
 	_, err := conn.Write(resp)
 	return err
-
 }
 
 
@@ -172,7 +180,6 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			return e
 		}
 
-		// todo udp通道的时常应该要考虑下
 		packet.SetTimeout(config.Timeout)
 
 		wg := new(sync.WaitGroup)
