@@ -59,8 +59,11 @@ func (c *Client)Pipe() {
 func (c *Client)PipeUdp() {
 	// do something with udp channel
 	//remoteUdpAddr, err := net.ResolveUDPAddr("udp", c.PCRsp.SAddr.AddrString())
+
+	portBytes := ClientChangePort(c.PCQI.Dst.Port)
+
 	localUdpAddr, err := net.ResolveUDPAddr("udp", ":"+
-														strconv.Itoa(c.PCQI.Dst.PortToInt()+2))
+														strconv.Itoa(int(portBytes[0])*256+int(portBytes[1])))
 	if err != nil {
 		Logln("UDP addr parse error,", err)
 		return
@@ -72,7 +75,7 @@ func (c *Client)PipeUdp() {
 		RefuseRequest(c.LocalConn)
 		return
 	}
-	err = c.PCQI.Response(c.LocalConn, c.config.GetLocalString())
+	err = c.PCQI.Response(c.LocalConn, c.config.GetLocalString(), false)
 
 	if err != nil {
 		Logln(err)
@@ -141,7 +144,7 @@ func (c *Client)PipeUdp() {
 func (c *Client)PipeTcp() {
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	e := c.PCQI.Response(c.LocalConn, c.config.GetLocalString())
+	e := c.PCQI.Response(c.LocalConn, c.config.GetLocalString(), false)
 	if e != nil {
 		Logln(e)
 		c.Close()
@@ -156,7 +159,6 @@ func (c *Client)PipeTcp() {
 		} else {
 			Deb.Printf("LocalConn -> RemoteConn 复制了%dB信息", written)
 		}
-		// todo
 		e = c.RemoteConn.Close()
 		if e != nil {
 			Logff(ExceptionTurnOffRemoteTCP.Error()+"%v", LOG_WARNING, e)
@@ -174,7 +176,7 @@ func (c *Client)PipeTcp() {
 		} else {
 			Deb.Printf("RemoteConn -> LocalConn 复制了%dB信息", written)
 		}
-		// todo
+
 		//e = c.LocalConn.Close()
 		//if e != nil {
 		//	Logff(ExceptionTurnOffRemoteTCP.Error()+"%v", LOG_WARNING, e)
@@ -204,7 +206,6 @@ func (c *Client)PipeTcp() {
 func NewClient(localConn *Conn, pcqi *PCQInfo, config *Config, plugins *Plugins, protocols *TCSubProtocols) (c *Client, err error){
 	c = &Client{}
 
-	// todo 主要更改这个连接
 	remoteConn, pcrsp, err := NewRemoteConn(config, pcqi, plugins, protocols)
 
 	if err != nil {

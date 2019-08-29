@@ -38,7 +38,8 @@ func (p *PCQInfo) ToBytes() []byte {
 }
 
 // @param server ip的字符串,
-func (p *PCQInfo) Response(conn *Conn, server string) error {
+// @param cs true时表示是server端调用
+func (p *PCQInfo) Response(conn *Conn, server string, cs bool) error {
 	var resp []byte
 	if p.Cmd == REQUEST_TCP {
 		// 请求tcp代理
@@ -59,9 +60,14 @@ func (p *PCQInfo) Response(conn *Conn, server string) error {
 		// 遵照回应udp的写法
 		resp = append([]byte{0x05, 0x00, 0x00, ipType}, ipBytes...)
 
-		// todo udp端口这边其实还有问题，没统一，在开启端口的时候可能与通知udp端口不相同（概率极低）
-		resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)
-		Deb.Println("告诉客户端我监听的udp端口：", p.Dst.Port )
+		var portBytes []byte
+		if cs {
+			portBytes = ServerChangePort(p.Dst.Port)
+		} else {
+			portBytes = ClientChangePort(p.Dst.Port)
+		}
+		resp = append(resp, portBytes[0], portBytes[1])
+		Deb.Println("告诉客户端我监听的udp端口：", portBytes )
 	}
 
 	_, err := conn.Write(resp)
@@ -92,7 +98,7 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			//}
 		}()
 
-		e = p.Response(conn, config.GetServers()[0])
+		e = p.Response(conn, config.GetServers()[0], true)
 		if e != nil {
 			return e
 		}
@@ -143,9 +149,9 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 	} else if p.Cmd == REQUEST_UDP {
 		//fmt.Println("打个标记")
 
-		// todo 最终监听的udp端口还没定，暂且是client端口+2
-		//fmt.Println("实际监听端口： ", p.Dst.PortToInt()+2)
-		udpaddr, e := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(p.Dst.PortToInt()+2))
+		//fmt.Println("实际监听端口： ", p.Dst.PortToInt()+2) strconv.Itoa(p.Dst.PortToInt()+2)
+		portBytes := ServerChangePort(p.Dst.Port)
+		udpaddr, e := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(256*int(portBytes[0]) + int(portBytes[1])))
 
 		if e != nil {
 			return e
@@ -167,7 +173,7 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 		}
 
 		// 对客户端回应
-		e = p.Response(conn, config.GetServers()[0])
+		e = p.Response(conn, config.GetServers()[0], true)
 
 		if e != nil {
 			Deb.Println("pcqi.go response error:", e)
