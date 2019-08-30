@@ -4,9 +4,9 @@ server: 192.168.1.99
 # 198.46.183.156
 server_port: 1801
 # Discontinuation time after no request
-timeout: 60
+timeout: 30
 
-local_address: 192.168.1.99
+local_address: 127.0.0.1
 local_port: 1082
 
 
