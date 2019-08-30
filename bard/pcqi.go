@@ -37,7 +37,9 @@ func (p *PCQInfo) ToBytes() []byte {
 	return append([]byte{p.Ver, p.Cmd, 0x00}, p.Dst.ToProtocol()...)
 }
 
-func (p *PCQInfo) Response(conn *Conn, server string) error {
+// @param server ip的字符串,
+// @param cs true时表示是server端调用
+func (p *PCQInfo) Response(conn *Conn, server string, cs bool) error {
 	var resp []byte
 	if p.Cmd == REQUEST_TCP {
 		// 请求tcp代理
@@ -48,16 +50,28 @@ func (p *PCQInfo) Response(conn *Conn, server string) error {
 		// 主要响应socks5最后的请求 cmd 为udp
 		// 服务器端server 一般只有一个ip todo 先别管多IP吧 而且还只支持ipv4
 		var ip = net.ParseIP(server)
-		//fmt.Println("ip is .............", ip.To4())
+
+		// ipv6实现
+		ipBytes, ipType, err := IpToBytes(ip)
+		if err != nil {
+			return err
+		}
+
 		// 遵照回应udp的写法
-		resp = append([]byte{0x05, 0x00, 0x00, 0x01}, ip.To4()...)
-		resp = append(resp, p.Dst.Port[0], p.Dst.Port[1]+2)
-		Deb.Println("告诉客户端我监听的udp端口：", p.Dst.Port )
+		resp = append([]byte{0x05, 0x00, 0x00, ipType}, ipBytes...)
+
+		var portBytes []byte
+		if cs {
+			portBytes = ServerChangePort(p.Dst.Port)
+		} else {
+			portBytes = ClientChangePort(p.Dst.Port)
+		}
+		resp = append(resp, portBytes[0], portBytes[1])
+		Deb.Println("告诉客户端我监听的udp端口：", portBytes )
 	}
 
 	_, err := conn.Write(resp)
 	return err
-
 }
 
 
@@ -84,7 +98,7 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			//}
 		}()
 
-		e = p.Response(conn, config.GetServers()[0])
+		e = p.Response(conn, config.GetServers()[0], true)
 		if e != nil {
 			return e
 		}
@@ -98,8 +112,8 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			// 从客户端读出的数据可能超错BUFSIZE
 			readbuf := make([]byte, ReadBUFSIZE)
 
-			// 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
-			written, e := PipeBuffer(remote, conn, readbuf, dealOrnament(RECEIVE, conn.plugin))
+			// 废弃 | 转发给远程主机，此时应该将客户端拿来的东西给解密，解密是在read之后，所以该过程是最后处理的函数
+			written, e := PipeBuffer(remote, conn, readbuf, nil/*dealOrnament(RECEIVE, conn.plugin)*/)
 			if e != nil {
 				Deb.Printf("从r中写入到remote失败: %v", e)
 			} else {
@@ -114,8 +128,8 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 
 		go func() {
 			defer wg.Done()
-			// 从远程主机那获取内容是明文（我方没加密）， 所以需要对其加密发送给客户端
-			written, e := Pipe(conn, remote, dealOrnament(SEND, conn.plugin))
+			// 废弃 | 从远程主机那获取内容是明文（我方没加密）， 所以需要对其加密发送给客户端
+			written, e := Pipe(conn, remote, nil/*dealOrnament(SEND, conn.plugin)*/)
 			if e != nil {
 				Deb.Printf("从remote中写入到r失败: %v", e)
 			} else {
@@ -135,9 +149,9 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 	} else if p.Cmd == REQUEST_UDP {
 		//fmt.Println("打个标记")
 
-		// todo 最终监听的udp端口还没定，暂且是client端口+2
-		//fmt.Println("实际监听端口： ", p.Dst.PortToInt()+2)
-		udpaddr, e := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(p.Dst.PortToInt()+2))
+		//fmt.Println("实际监听端口： ", p.Dst.PortToInt()+2) strconv.Itoa(p.Dst.PortToInt()+2)
+		portBytes := ServerChangePort(p.Dst.Port)
+		udpaddr, e := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(256*int(portBytes[0]) + int(portBytes[1])))
 
 		if e != nil {
 			return e
@@ -159,7 +173,7 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 		}
 
 		// 对客户端回应
-		e = p.Response(conn, config.GetServers()[0])
+		e = p.Response(conn, config.GetServers()[0], true)
 
 		if e != nil {
 			Deb.Println("pcqi.go response error:", e)
@@ -172,7 +186,6 @@ func (p *PCQInfo) HandleConn(conn *Conn, config *Config) (e error) {
 			return e
 		}
 
-		// todo udp通道的时常应该要考虑下
 		packet.SetTimeout(config.Timeout)
 
 		wg := new(sync.WaitGroup)

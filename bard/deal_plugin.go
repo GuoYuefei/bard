@@ -1,6 +1,6 @@
 package bard
 
-// node 原本想废弃，现留一有用函数
+// ！！！ 本文件废弃
 
 // 处理插件 c函数 De取自Decipher前缀
 //func dealDeCamouflage(r *bufio.Reader, iPlugin IPlugin) {

@@ -3,7 +3,6 @@ package bard
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"io"
 	"net"
 )
@@ -33,14 +32,21 @@ func (u *UDPReqS) String() string {
 		Deb.Println("-------------dns解析失败---------------", e)
 		return ""
 	}
-	//fmt.Println(ips)
+	// 解析出来可能只有ipv6，所以得处理ipv6
+	ipbytes, iptype, _ := IpToBytes(ips[0])
 
-	return fmt.Sprintf("%s:%d", ips[0], u.Dst.PortToInt())
+	addr := Address{
+		Atyp: iptype,
+		Addr: ipbytes,
+		Port: u.Dst.Port,
+	}
+
+	return addr.String()
 }
 
 //Network
 func (u *UDPReqS)Network() string {
-	return "udp4"
+	return "udp"
 }
 
 func NewUDPReqS(packet net.PacketConn) (*UDPReqS, error) {

@@ -1,10 +1,27 @@
 package bard
 
 import (
+	"errors"
 	"fmt"
 	"net"
 )
 
+// @param ip
+// @return []byte ip代表的字节数组
+// @return int IPV4(0x01) or IPV6(0x04),代表该ip是什么类型 0x00错误时返回
+// @return error 错误返回
+func IpToBytes(ip net.IP) ([]byte, byte, error) {
+	srcip := ip.To4()
+	srcipType := IPV4
+	if srcip == nil {
+		srcip = ip.To16()
+		srcipType = IPV6
+		if srcip == nil {
+			return nil, 0x00, errors.New("Address error IP cannot be parsed into version 4 or 6 ")
+		}
+	}
+	return srcip, srcipType, nil
+}
 
 type UDPAddress struct {
 	*Address
@@ -15,19 +32,19 @@ func (u *UDPAddress) Network() string {
 }
 
 type Address struct {
-	Atyp byte			// Atyp address type 0x01, 0x03, 0x04 => ipv4 domain ipv6
+	Atyp byte // Atyp address type 0x01, 0x03, 0x04 => ipv4 domain ipv6
 	Addr []byte
-	Port []byte			// 16 bit
+	Port []byte // 16 bit
 }
 
 func (a *Address) PortToInt() int {
 	p := a.Port
-	return 256*int(p[0])+int(p[1])
+	return 256*int(p[0]) + int(p[1])
 }
 
 // 因为域名这里没有记录下长度，如果用于协议的话，前面需要加域名的长度， 如果是ip则不用加工
 func (a *Address) ToProtocolAddr() []byte {
-	if a.Atyp&0x02!=0x02 {
+	if a.Atyp&0x02 != 0x02 {
 		// ip就返回原本的bytes
 		return a.Addr
 	}
@@ -38,12 +55,12 @@ func (a *Address) ToProtocolAddr() []byte {
 
 // 这是常规协议回应可能用的bytes结构
 func (a *Address) ToProtocol() []byte {
-	return append(append([]byte{a.Atyp},  a.ToProtocolAddr()...), a.Port...)
+	return append(append([]byte{a.Atyp}, a.ToProtocolAddr()...), a.Port...)
 }
 
 func (a *Address) AddrString() string {
 	var hostname string
-	if !(a.Atyp&0x02==0x02) {
+	if !(a.Atyp&0x02 == 0x02) {
 		// 就说明是非域名
 		var ip net.IP = a.Addr
 		hostname = ip.String()
@@ -56,5 +73,21 @@ func (a *Address) AddrString() string {
 
 func (a *Address) String() string {
 
-	return fmt.Sprintf("%s:%d", a.AddrString(), a.PortToInt())
+	if a.Atyp == IPV6 {
+		// ipv6 需要写成这样[ipv6]:port
+		return fmt.Sprintf("[%s]:%d", a.AddrString(), a.PortToInt())
+	} else {
+		return fmt.Sprintf("%s:%d", a.AddrString(), a.PortToInt())
+	}
+}
+
+// 根据端口好生成端口号
+func ServerChangePort(src []byte) []byte {
+	var temp byte = byte((uint(src[0]*src[1])+8191*uint(src[0]+src[1])) % 256)				// 8191第五个梅森素数， 梅森数仅仅起到系数的作用
+	return []byte{src[0] | temp, src[1] & temp}
+}
+
+func ClientChangePort(src []byte) []byte {
+	var temp byte = byte((uint(src[0]+src[1]) + 131071*uint(src[0]*src[1])) % 256)			//131071第6个
+	return []byte{src[0] | temp, src[1] & temp}
 }

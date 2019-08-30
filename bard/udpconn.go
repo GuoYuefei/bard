@@ -177,21 +177,25 @@ func (p *Packet) Listen() error {
 		if src, ok := p.Servers[addr.String()]; ok {
 			reader := bufio.NewReader(bytes.NewReader(buf[0:nr]))
 			// 当 远程主机
-			srcip := src.IP.To4()
-			srcipType := IPV4
-			if srcip == nil {
-				srcip = src.IP.To16()
-				srcipType = IPV6
-				if srcip == nil {
-					Deb.Println("Address error IP cannot be parsed into version 4 or 6")
-					return err
-				}
+			//srcip := src.IP.To4()
+			//srcipType := IPV4
+			//if srcip == nil {
+			//	srcip = src.IP.To16()
+			//	srcipType = IPV6
+			//	if srcip == nil {
+			//		return errors.New("Address error IP cannot be parsed into version 4 or 6 ")
+			//	}
+			//}
+
+			srcip, srcipType, err := IpToBytes(src.IP)
+			if err != nil {
+				return err
 			}
 
 			message.dst = p.Client
 			Deb.Printf("Processing UDP messages from remote host %s", src)
 			// 如果发送的消息来自ip和port记录在servers中了，那么就执行转发.否则丢弃
-			_, err := Pipe(message, reader, func(data []byte) ([]byte, int) {
+			_, err = Pipe(message, reader, func(data []byte) ([]byte, int) {
 				head := append([]byte{0x00, 0x00, p.Frag, srcipType}, srcip...)
 				head = append(head, uint8(src.Port>>8), uint8(src.Port))
 				data = append(head, data...)

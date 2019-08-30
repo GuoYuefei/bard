@@ -36,10 +36,6 @@ type Send = bool
 // 对io接口需要结合Pipe.go中的函数使用
 type IPlugin interface {
 
-	// node EndCam 废弃
-	// todo 每个函数都有两个状态，一个是接收时怎么做一个是发送时怎么做
-	// todo 所以函数签名还是要改
-
 	// 其中为了实现Camouflage还需要一个函数，表示混淆协议的结束符号
 	// !!!! 函数废弃，正好做保留字段
 	EndCam() []byte
@@ -51,20 +47,17 @@ type IPlugin interface {
 	// node 注意 我这边一直强调是引用，而非内容
 
 	// 伪装、混淆， 在socks5协议之前伪装协议头
-	// 也就是在socks5之前加一个啥协议什么的
+	// 也就是在socks5之前加一个啥协议什么的 send==false时无作用
 	Camouflage([]byte, Send) ([]byte, int)
 
 	// 防嗅探，
 	// socks5握手阶段开始每次socks5连接的io都要经过这个函数。 可以操作传输层之上的所有内容
 	AntiSniffing([]byte, Send) ([]byte, int)
 
-	// 操作传输内容
-	// 这个主要是用于操作远程服务器和客户端主机之间传送的内容 不包括socks5本身
-	// node 如果启用了A函数，请不要再启用O函数				A函数会将socks5协议加密，更加安全
+	// 此函数废弃，请原封不动返回 或者在优先级设置中屏蔽此函数
 	Ornament([]byte, Send) ([]byte, int)
 
 	// 优先级，越是优先越后运行	0是最高优先级
-	// !!! 一个重要的解释：前面三位是保留位
 	// 当十六位0001,xxxx,xxxx,xxxx这样格式的，为在socks5协议之前的混淆协议，这时启用Camouflage函数，
 	// 当十六位0010,xxxx,xxxx,xxxx格式的，为加密或操作socks协议本身，这个主要防止在建立socks5连接阶段被嗅探,启用AntiSniffing
 	// 当十六位0100,xxxx,xxxx,xxxx格式的，为加密或操作传输内容的 启用Ornament函数
