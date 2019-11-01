@@ -84,6 +84,7 @@ func (c *Client)PipeUdp() {
 	}
 
 	// c.RemoteConn 主要是把含有plugin的一个连接传入 此时Packet类型中的client就是远程代理服务器的监听地址了。 因为udp交流是双方是平等的，也可以将远程服务器理解成本udp连接的客户端
+	// 这边packet的localConn用c的remoteConn代替的原因是 设计到加减密， 减少代码量
 	packet, e := NewPacket(/*c.LocalConn*/c.RemoteConn, localPacket, c.PCRsp.SAddr.PortToInt())
 	if e != nil {
 		Logln(e)
@@ -280,16 +281,27 @@ func ClientHandleShakeWithRemote(r *bufio.Reader, conn *Conn, pcqi *PCQInfo, con
 	}
 	r.Reset(conn)			// 清空缓存
 
-	// 在发送请求前需要重新注册通讯配置信息
-	ok := CommConfigRegisterToConn(conn, config.Users[0].ComConfig, plugins, protocols)
-	if !ok {
-		e = errors.New("User Communication Configuration Not Found! ")
-		return
+	// 如果用了user/passwd的验证方式，在发送请求前需要重新注册通讯配置信息
+	if method == AuthUserPassword {
+		ok := CommConfigRegisterToConn(conn, config.Users[0].ComConfig, plugins, protocols)
+		if !ok {
+			e = errors.New("User Communication Configuration Not Found! ")
+			return
+		}
 	}
 
 	// 验证通过之后处理第二次握手----请求建立
 	// 也就是将客户端(客户端的客户端)请求内容转发给代理服务器
-	_, e = conn.Write(pcqi.ToBytes())
+
+	req := pcqi.Copy()
+	if pcqi.Cmd == 0x03 {
+		// 如果是udp连接，那么pcqi的Dst的端口就有用处
+		req.Dst.Port = ClientChangePort(req.Dst.Port)
+	}
+
+	// tcp 就原封不动的返回
+	_, e = conn.Write(req.ToBytes())
+
 	if e != nil {
 		return
 	}

@@ -9,10 +9,6 @@ import (
 	"net"
 )
 
-/**
-	这个文件是server程序独占。 考虑是否移除到包外
- */
-
 const (
 	SocksVersion uint8 = 0x05
 

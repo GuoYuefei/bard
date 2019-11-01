@@ -3,6 +3,7 @@ package bard
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 )
 
@@ -35,6 +36,19 @@ type Address struct {
 	Atyp byte // Atyp address type 0x01, 0x03, 0x04 => ipv4 domain ipv6
 	Addr []byte
 	Port []byte // 16 bit
+}
+
+func (a *Address) Copy() *Address {
+	addr := make([]byte, len(a.Addr))
+	port := make([]byte, len(a.Port))
+	copy(addr, a.Addr)
+	copy(port, a.Port)
+	result := &Address{
+		Atyp: a.Atyp,
+		Addr: addr,
+		Port: port,
+	}
+	return result
 }
 
 func (a *Address) PortToInt() int {
@@ -90,4 +104,9 @@ func ServerChangePort(src []byte) []byte {
 func ClientChangePort(src []byte) []byte {
 	var temp byte = byte((uint(src[0]+src[1]) + 131071*uint(src[0]*src[1])) % 256)			//131071第6个
 	return []byte{src[0] | temp, src[1] & temp}
+}
+
+func RandPort() []byte {
+	i := rand.Int() % (2 << 16 - 1024) + 1024
+	return []byte{byte(i >> 8), byte(i)}
 }

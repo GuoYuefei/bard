@@ -131,10 +131,10 @@ func (p *Packet) Listen() error {
 	Deb.Println("the len of p.servers:", len(p.Servers))
 
 	// todo 当代理服务器在远程主机上时，QQ需要只会验证客户端IP。而无需验证端口。也就是说请求是客户端发来的端口信息也并无软用 不过这样写之后可以兼容正规socks5协议
-	if p.Client.IP.String() == uaddr.IP.String() {
-		if p.Client.String() != uaddr.String() {
-			p.Client = uaddr //改变p.client的port
-		}
+	if p.Client.String() == uaddr.String() {
+		//if p.Client.String() != uaddr.String() {
+		//	p.Client = uaddr //改变p.client的port
+		//}
 		// endtodo 1 消息来自客户端就需要进行解密 解密就可能存在多余数据或者少数据的情况，这时候就需要用p.buf将其存起来
 		if p.Socks.plugin != nil {
 			//_, nr = p.Socks.plugin.Ornament(buf[0:nr], RECEIVE)
@@ -266,12 +266,12 @@ func (p *Packet) ListenToFixedTarget(serverKey string) error {
 
 	} else if src, ok := p.Servers[serverKey]; ok {
 		// 这里的server中应该只有一个值，且是客户端的客户端的地址
-		if src.IP.String() == uaddr.IP.String() {
+		if src.String() == uaddr.String() {
 			// 如果serverKey存在且与读取到的udp消息IP相同。！！。
 			// 以下if 为了兼容QQudp会更换port来进行udp连接
-			if src.String() != uaddr.String() {
-				p.Servers[serverKey] = uaddr
-			}
+			//if src.String() != uaddr.String() {
+			//	p.Servers[serverKey] = uaddr
+			//}
 
 			message.dst = p.Client
 			Deb.Printf("Processing UDP messages from client host %s", src)

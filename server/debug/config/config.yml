@@ -1,6 +1,6 @@
 # Current server public network IP Or IP for local testing and Port
-server: 192.168.1.99
-server_port: 1801
+server: 198.46.183.156
+server_port: 80
 # Discontinuation time after no request
 timeout: 40
 
@@ -9,7 +9,7 @@ timeout: 40
 # 0 Represents that validation is not required                 表示无验证
 # 2 Indicates that account password verification is required   表示进行账号密码认证
 # 客户端的本地服务器下，建议设置为0，本地无需认证。 否则只能用以下账号密码登录本地服务器
-authority_method: 0
+authority_method: 2
 
 # 该设置，在远程代理服务器下为服务器设定用户信息。
 # 该设置，在本地服务器下为连接远程服务器用户信息(数组第一项) 和 如果本地服务器需要验证，那么也是本地服务器的账户密码(整个数组)

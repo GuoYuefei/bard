@@ -1,12 +1,12 @@
 # Current server public network IP Or IP for local testing and Port
-server: 192.168.1.99
+server: 198.46.183.156
 # 47.100.167.83
 # 198.46.183.156
-server_port: 1801
+server_port: 80
 # Discontinuation time after no request
-timeout: 30
+timeout: 40
 
-local_address: 127.0.0.1
+local_address: 192.168.1.99
 local_port: 1082
 
 

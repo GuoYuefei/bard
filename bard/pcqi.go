@@ -21,6 +21,18 @@ type PCQInfo struct {
 	Dst *Address
 }
 
+func (p *PCQInfo) Copy() *PCQInfo {
+	// 深度拷贝对象
+	result := &PCQInfo{
+		Ver:  p.Ver,
+		Cmd:  p.Cmd,
+		Frag: p.Frag,
+		Rsv:  p.Rsv,
+		Dst:  p.Dst.Copy(),
+	}
+	return result
+}
+
 func (p *PCQInfo) Network() string {
 	if p.Cmd != 0x03 {
 		return "tcp"
