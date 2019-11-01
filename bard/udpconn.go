@@ -53,6 +53,8 @@ type Packet struct {
 	message chan *UdpMessage
 	Frag    uint8 // udp分段
 	buf map[string] []byte
+
+	NAT bool				// true udp私网到公网NAT转换导致的端口变化，默认true，有一次的修正机会
 }
 
 func (p *Packet) GetDeadline() time.Time {
@@ -78,6 +80,7 @@ func NewPacket(conn *Conn, p *net.UDPConn, cport int) (*Packet, error) {
 	packet.Servers = make(map[string]*net.UDPAddr)
 	packet.message = make(chan *UdpMessage, MESSAGESIZE)
 	packet.buf = make(map[string] []byte)
+	packet.NAT = true
 
 	if addr, ok := caddr.(*net.TCPAddr); ok {
 		packet.Client, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr.IP, cport))
@@ -111,6 +114,7 @@ func (p *Packet) Request() (n int, err error) {
 	return i, err
 }
 
+// 服务器端使用
 func (p *Packet) Listen() error {
 
 	var message = &UdpMessage{}
@@ -130,7 +134,12 @@ func (p *Packet) Listen() error {
 	Deb.Printf("p.client.string=%s\n", p.Client.String())
 	Deb.Println("the len of p.servers:", len(p.Servers))
 
-	// todo 当代理服务器在远程主机上时，QQ需要只会验证客户端IP。而无需验证端口。也就是说请求是客户端发来的端口信息也并无软用 不过这样写之后可以兼容正规socks5协议
+	// todo 现代一般都有私网到公网的nat转换，所以udp的端口可能会变，暂且认为第一次连接的端口是socks确认端口
+	if p.NAT == true && p.Client.String() != uaddr.String() && p.Client.IP.String() == uaddr.IP.String() {
+		p.Client = uaddr //改变p.client的port
+		p.NAT = false		// 就一次改变的机会
+	}
+
 	if p.Client.String() == uaddr.String() {
 		//if p.Client.String() != uaddr.String() {
 		//	p.Client = uaddr //改变p.client的port
@@ -381,7 +390,6 @@ func (p *Packet) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 }
 
 func (p *Packet) WriteTo(b []byte, addr net.Addr) (n int, err error) {
-
 	n, err = p.Packet.WriteTo(b, addr)
 	_ = p.SetDeadline(p.GetDeadline())
 	return
